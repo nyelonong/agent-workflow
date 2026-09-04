@@ -7,5 +7,7 @@ Use Claude Code's native question interface for required decisions. Ask one conc
 
 Load the personal `workflow` skill when the user invokes `/workflow` or asks to run the workflow. For approved multi-task planning, use only the `oracle` agent. Use the `reviewer` agent only when the global independent-review boundary applies, the user requests it, or credible uncertainty justifies optional review. Ordinary parent work needs no agent delegation.
 
+For Go work, load `golang-how-to` before design, implementation, review, debugging, or refactoring; load its detailed skills only when the task needs them.
+
 Claude-specific hooks, permissions, status line, MCP servers, language skills, and project `CLAUDE.md` files remain authoritative within their narrower scope. `/graphify` uses the installed Graphify skill before anything else.
 <!-- personal-workflow:claude:end -->

@@ -42,6 +42,37 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("no mandatory subagent review", workflow)
         self.assertIn("at most one fresh `reviewer`", workflow)
 
+    def test_portable_policy_carries_the_hard_engineering_rules(self) -> None:
+        policy = (ROOT / "policy.md").read_text(encoding="utf-8").lower()
+        claude = (ROOT / "adapters/claude/CLAUDE.md").read_text(encoding="utf-8")
+
+        for required in (
+            "start any go work",
+            "change only necessary code, callers, interfaces, tests, and documentation",
+            "report unrelated defects",
+            "comments are rare",
+            "async work needs an explicit owner and cancellation path",
+            "do not optimize speculatively",
+            "## sql and migrations",
+            "once applied in a shared, test, staging, or production environment",
+            "test observable behavior and stable invariants, not production configuration",
+            "postgresql, clickhouse, or redis",
+            "integration, smoke, and end-to-end tests are local-only and never committed",
+            "use an isolated real database",
+            "in-process http server",
+            "never request secrets in chat",
+            "automatic context compaction is not a task boundary",
+            "explain mentioned ids",
+            "percent-encoded `file://`",
+            "`id.afrani.app.{app_name}`",
+        ):
+            self.assertIn(required, policy)
+        for pi_only in ("ask_decision", "workflowscript", "base_tools", "~/.pi/"):
+            self.assertNotIn(pi_only, policy)
+        self.assertLessEqual(len(policy), 12_000)
+        self.assertLessEqual(len(policy.splitlines()), 200)
+        self.assertIn("`golang-how-to`", claude)
+
     def test_native_role_layouts_are_present_and_read_only(self) -> None:
         paths = (
             ROOT / "adapters/claude/agents/oracle.md",
