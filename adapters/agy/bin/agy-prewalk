@@ -1,0 +1,71 @@
+#!/bin/sh
+# Prewalk for Antigravity: a strong model plans and makes the first edit in a
+# print-mode phase; the installed hooks (inert unless AGY_PREWALK_STATE is set)
+# end that phase at the second edit; the same conversation then continues
+# interactively on a cheaper model.
+set -eu
+
+usage() {
+  cat <<'USAGE' >&2
+usage: agy-prewalk [--from MODEL] [--into MODEL] [--cwd DIR] [--mode MODE] -- TASK...
+  --from MODEL   strong model for phase 1 (default: claude-opus-4-6-thinking)
+  --into MODEL   cheap model for phase 2 (default: gemini-3.8-flash-low)
+  --cwd DIR      run both phases in DIR (default: current directory)
+  --mode MODE    agy execution mode for phase 1 (default: accept-edits)
+Put -- before a task that starts with a dash.
+USAGE
+  exit 64
+}
+
+self="$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")"
+repo_dir="$(cd "$(dirname "$self")/../../.." && pwd -P)"
+render="$repo_dir/scripts/prewalk_render.py"
+
+from_model="claude-opus-4-6-thinking"
+into_model="gemini-3.8-flash-low"
+work_dir=""
+mode="accept-edits"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --from) [ $# -ge 2 ] || usage; from_model="$2"; shift 2 ;;
+    --into) [ $# -ge 2 ] || usage; into_model="$2"; shift 2 ;;
+    --cwd) [ $# -ge 2 ] || usage; work_dir="$2"; shift 2 ;;
+    --mode) [ $# -ge 2 ] || usage; mode="$2"; shift 2 ;;
+    --) shift; break ;;
+    -h|--help) usage ;;
+    -*) usage ;;
+    *) break ;;
+  esac
+done
+[ $# -gt 0 ] || usage
+task="$*"
+[ -z "$work_dir" ] || cd "$work_dir"
+
+state_file="$(mktemp "${TMPDIR:-/tmp}/agy-prewalk.XXXXXX")"
+id_file="$(mktemp "${TMPDIR:-/tmp}/agy-prewalk.XXXXXX")"
+trap 'rm -f "$state_file" "$id_file"' EXIT
+
+printf 'prewalk: phase 1 on %s\n' "$from_model" >&2
+if ! AGY_PREWALK_STATE="$state_file" agy --model "$from_model" --mode "$mode" \
+  --output-format stream-json -p "$task" </dev/null | python3 "$render" agy "$id_file"; then
+  printf 'prewalk: phase 1 did not start or ended abnormally; not resuming\n' >&2
+  exit 1
+fi
+
+if grep -qx edit "$state_file" 2>/dev/null; then
+  resume_model="$into_model"
+  printf 'prewalk: first edit recorded; phase 2 on %s\n' "$into_model" >&2
+  continue_text="Continue from the checklist. The first edit is already applied; finish the remaining items, then verify consistency across call sites, keep the diff minimal, and run the whole test module the change lives in."
+else
+  resume_model="$from_model"
+  printf 'prewalk: no edit recorded in phase 1; resuming on %s instead\n' "$from_model" >&2
+  continue_text="Continue the task from where the previous turn stopped."
+fi
+conversation="$(cat "$id_file" 2>/dev/null || true)"
+rm -f "$state_file" "$id_file"
+trap - EXIT
+if [ -n "$conversation" ]; then
+  exec agy --conversation "$conversation" --model "$resume_model" -i "$continue_text"
+fi
+printf 'prewalk: no conversation id captured; continuing the most recent conversation\n' >&2
+exec agy --continue --model "$resume_model" -i "$continue_text"

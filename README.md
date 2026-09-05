@@ -20,10 +20,12 @@ The installer manages one marked block in `~/.gemini/GEMINI.md`, the global `wor
 ## Prewalk
 
 `./install.sh install claude` adds the prewalk hooks to `~/.claude/settings.json`
-beside existing hooks and links `~/.local/bin/claude-prewalk`. `claude-prewalk -- <task>`
-runs a strong model until its first edit, then resumes the same session on a cheaper
-model. The hooks are inert unless the wrapper armed them; subagents started during
-phase 1 share the arming. Specification: `docs/specs/2026-09-05-prewalk.md`.
+beside existing hooks and links `~/.local/bin/claude-prewalk`. `./install.sh install agy`
+adds a `prewalk` block to `~/.gemini/config/hooks.json` beside other blocks and links
+`~/.local/bin/agy-prewalk`. `claude-prewalk -- <task>` and `agy-prewalk -- <task>` run a
+strong model until its first edit, then resume the same session on a cheaper model. The
+hooks are inert unless the wrapper armed them; subagents started during phase 1 share
+the arming. Specifications and plans are kept locally under `docs/`, which is not tracked.
 
 ## Gate
 

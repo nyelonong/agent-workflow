@@ -12,6 +12,7 @@ usage: claude-prewalk [--from MODEL] [--into MODEL] [--cwd DIR] [--permission-mo
   --into MODEL           cheap model for phase 2 (default: sonnet)
   --cwd DIR              run both phases in DIR (default: current directory)
   --permission-mode MODE pass through to phase 1 (default: inherit settings)
+Put -- before a task that starts with a dash.
 USAGE
   exit 64
 }

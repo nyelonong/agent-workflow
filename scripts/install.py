@@ -121,10 +121,63 @@ def agy_paths(home: Path) -> list[tuple[Path, Path]]:
     ]
 
 
+def agy_links(home: Path) -> list[tuple[Path, Path]]:
+    return [(ROOT / "adapters/agy/bin/agy-prewalk", home / ".local/bin/agy-prewalk")]
+
+
+AGY_HOOKS_BLOCK = "prewalk"
+
+
+def agy_hook_command(event: str) -> str:
+    script = shlex.quote(str(CLAUDE_HOOK_SCRIPT))
+    # Guarded so a moved repository fails open (empty stdout is Antigravity's neutral answer).
+    return f"[ -f {script} ] && python3 {script} agy {event} || true"
+
+
+def agy_hooks_block() -> dict:
+    handler = lambda event: {"type": "command", "command": agy_hook_command(event), "timeout": 10}
+    return {
+        "PreInvocation": [handler("PreInvocation")],
+        "Stop": [handler("Stop")],
+        "PreToolUse": [{"matcher": ".*", "hooks": [handler("PreToolUse")]}],
+        "PostToolUse": [{"matcher": ".*", "hooks": [handler("PostToolUse")]}],
+    }
+
+
+def agy_hooks_path(home: Path) -> Path:
+    path = home / ".gemini/config/hooks.json"
+    return path.resolve() if path.is_symlink() else path
+
+
+def load_agy_hooks(home: Path) -> tuple[Path, dict]:
+    path = agy_hooks_path(home)
+    data = load_json(path)
+    if AGY_HOOKS_BLOCK in data and not isinstance(data[AGY_HOOKS_BLOCK], dict):
+        fail(f"{path} has a non-object {AGY_HOOKS_BLOCK} block")
+    return path, data
+
+
+def install_agy_hooks(home: Path) -> None:
+    path, data = load_agy_hooks(home)
+    if data.get(AGY_HOOKS_BLOCK) == agy_hooks_block():
+        return
+    data[AGY_HOOKS_BLOCK] = agy_hooks_block()
+    atomic_write(path, json.dumps(data, indent=2) + "\n")
+
+
+def check_agy_hooks(home: Path) -> None:
+    path, data = load_agy_hooks(home)
+    if data.get(AGY_HOOKS_BLOCK) != agy_hooks_block():
+        fail(f"prewalk block is missing or differs in {path}")
+
+
 def install_agy(home: Path) -> None:
     paths = agy_paths(home)
     for _, target in paths:
         preflight_directory(target)
+    for source, target in agy_links(home):
+        preflight_link(source, target)
+    load_agy_hooks(home)
 
     gemini = home / ".gemini/GEMINI.md"
     existing = gemini.read_text(encoding="utf-8") if gemini.exists() else ""
@@ -134,6 +187,9 @@ def install_agy(home: Path) -> None:
     atomic_write(gemini, rendered)
     for source, target in paths:
         install_directory(source, target)
+    install_agy_hooks(home)
+    for source, target in agy_links(home):
+        install_link(source, target)
 
 
 def check_agy(home: Path) -> None:
@@ -146,6 +202,9 @@ def check_agy(home: Path) -> None:
     remove_galdr_block(home / ".gemini/AGENTS.md", check=True)
     for source, target in agy_paths(home):
         check_directory(source, target)
+    check_agy_hooks(home)
+    for source, target in agy_links(home):
+        check_link(source, target)
 
 
 CLAUDE_HOOK_SCRIPT = ROOT / "scripts/prewalk_hook.py"
