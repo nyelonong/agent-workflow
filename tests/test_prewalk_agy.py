@@ -114,7 +114,7 @@ class RenderTests(unittest.TestCase):
 
 
 class WrapperTests(unittest.TestCase):
-    def run_wrapper(self, markers: str, *args: str, fail_phase1: bool = False) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def run_wrapper(self, markers: str, *args: str, fail_phase1: bool = False, config: str | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
@@ -131,6 +131,10 @@ class WrapperTests(unittest.TestCase):
             })
             if fail_phase1:
                 env["FAKE_AGY_FAIL"] = "1"
+            env["XDG_CONFIG_HOME"] = str(Path(tmp) / "xdg")
+            if config is not None:
+                (Path(tmp) / "xdg/prewalk").mkdir(parents=True)
+                (Path(tmp) / "xdg/prewalk/config.json").write_text(config)
             result = subprocess.run([str(WRAPPER), *args], text=True, capture_output=True, env=env, cwd=tmp)
             lines = log.read_text().splitlines() if log.exists() else []
             leftover = [p for p in Path(tmp).iterdir() if p.name.startswith("agy-prewalk.")]
@@ -161,6 +165,19 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("did not start", result.stderr)
         self.assertFalse(any(line.startswith(("--continue", "--conversation")) for line in lines))
         self.assertIn("leftover:0", lines)
+
+    def test_config_file_sets_defaults_and_flags_win(self) -> None:
+        config = json.dumps({"agy": {"from": "gemini-3.1-pro-high", "into": "gemini-3.8-flash-medium", "mode": "plan"}})
+        _, lines = self.run_wrapper("edit\n", "--", "task", config=config)
+        self.assertIn("--model gemini-3.1-pro-high --mode plan", lines[0])
+        self.assertIn("--model gemini-3.8-flash-medium -i", [l for l in lines if l.startswith("--conversation")][0])
+
+        _, lines = self.run_wrapper("edit\n", "--mode", "accept-edits", "--", "task", config=config)
+        self.assertIn("--model gemini-3.1-pro-high --mode accept-edits", lines[0], "the flag wins, the file fills the rest")
+
+        result, lines = self.run_wrapper("edit\n", "--", "task", config="[]")
+        self.assertIn("JSON object", result.stderr)
+        self.assertIn("--model claude-opus-4-6-thinking --mode accept-edits", lines[0], "shipped defaults on a wrong shape")
 
     def test_usage(self) -> None:
         result, _ = self.run_wrapper("", "--into")

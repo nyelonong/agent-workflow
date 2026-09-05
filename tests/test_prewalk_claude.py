@@ -128,7 +128,7 @@ class RenderTests(unittest.TestCase):
 
 
 class WrapperTests(unittest.TestCase):
-    def run_wrapper(self, markers: str, *args: str, fail_phase1: bool = False, cwd_args: bool = False) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    def run_wrapper(self, markers: str, *args: str, fail_phase1: bool = False, cwd_args: bool = False, config: str | None = None) -> tuple[subprocess.CompletedProcess[str], list[str]]:
         with tempfile.TemporaryDirectory() as tmp:
             bin_dir = Path(tmp) / "bin"
             bin_dir.mkdir()
@@ -147,6 +147,10 @@ class WrapperTests(unittest.TestCase):
                 env["FAKE_CLAUDE_FAIL"] = "1"
             for key in [k for k in env if k.startswith("CLAUDE_PREWALK_")]:
                 env.pop(key)
+            env["XDG_CONFIG_HOME"] = str(Path(tmp) / "xdg")
+            if config is not None:
+                (Path(tmp) / "xdg/prewalk").mkdir(parents=True)
+                (Path(tmp) / "xdg/prewalk/config.json").write_text(config)
             work = Path(tmp) / "work"
             work.mkdir()
             if cwd_args:
@@ -195,11 +199,56 @@ class WrapperTests(unittest.TestCase):
         _, lines = self.run_wrapper("edit\n", "--", "task", cwd_args=True)
         self.assertTrue(lines[1].endswith("/work"), lines[1])
 
+    def test_config_file_sets_defaults_and_flags_win(self) -> None:
+        config = json.dumps({"claude": {"from": "opus", "into": "haiku", "permissionMode": "acceptEdits"}})
+        _, lines = self.run_wrapper("edit\n", "--", "task", config=config)
+        self.assertIn("--model opus", lines[0])
+        self.assertIn("--permission-mode acceptEdits", lines[0])
+        self.assertIn("--model haiku --append-system-prompt", lines[2])
+
+        _, lines = self.run_wrapper("edit\n", "--into", "sonnet", "--", "task", config=config)
+        self.assertIn("--model opus", lines[0], "file default still applies to the flag not given")
+        self.assertIn("--model sonnet --append-system-prompt", lines[2], "the flag wins")
+
+        result, lines = self.run_wrapper("edit\n", "--", "task", config="{broken")
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, result.stderr.count("not valid JSON"), "warned once")
+        self.assertIn("--model fable", lines[0], "shipped defaults on invalid config")
+
     def test_phase_one_failure_does_not_resume(self) -> None:
         result, lines = self.run_wrapper("", "--", "task", fail_phase1=True)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("did not start", result.stderr)
         self.assertEqual(1, len(lines), "no --resume after a failed phase 1")
+
+
+class ConfigHelperTests(unittest.TestCase):
+    def run_helper(self, xdg: Path, *keys: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, str(ROOT / "scripts/prewalk_config.py"), "claude", *keys],
+            text=True, capture_output=True, env={**os.environ, "XDG_CONFIG_HOME": str(xdg)},
+        )
+
+    def test_helper_prints_only_defined_scalar_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xdg = Path(tmp) / "xdg"
+            (xdg / "prewalk").mkdir(parents=True)
+            (xdg / "prewalk/config.json").write_text(json.dumps({"claude": {"from": "opus", "nested": {"x": 1}, "flag": True}}))
+            self.assertEqual("from=opus\nflag=true\n", self.run_helper(xdg, "from", "into", "nested", "flag").stdout)
+            self.assertEqual("", self.run_helper(xdg, "into").stdout)
+
+    def test_helper_is_silent_without_a_file_and_warns_on_invalid_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            xdg = Path(tmp) / "xdg"
+            absent = self.run_helper(xdg, "from")
+            self.assertEqual((0, "", ""), (absent.returncode, absent.stdout, absent.stderr))
+            (xdg / "prewalk").mkdir(parents=True)
+            (xdg / "prewalk/config.json").write_text("{oops")
+            invalid = self.run_helper(xdg, "from")
+            self.assertEqual((0, ""), (invalid.returncode, invalid.stdout))
+            self.assertIn("not valid JSON", invalid.stderr)
+            usage = subprocess.run([sys.executable, str(ROOT / "scripts/prewalk_config.py"), "claude"], text=True, capture_output=True)
+            self.assertEqual(64, usage.returncode)
 
 
 class InstallerTests(unittest.TestCase):

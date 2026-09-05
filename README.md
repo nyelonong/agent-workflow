@@ -25,7 +25,19 @@ adds a `prewalk` block to `~/.gemini/config/hooks.json` beside other blocks and 
 `~/.local/bin/agy-prewalk`. `claude-prewalk -- <task>` and `agy-prewalk -- <task>` run a
 strong model until its first edit, then resume the same session on a cheaper model. The
 hooks are inert unless the wrapper armed them; subagents started during phase 1 share
-the arming. Specifications and plans are kept locally under `docs/`, which is not tracked.
+the arming. Defaults for both wrappers come from flags, then
+`~/.config/prewalk/config.json` (or under `XDG_CONFIG_HOME`), then shipped values:
+
+```json
+{
+  "claude": { "from": "fable", "into": "sonnet", "permissionMode": "acceptEdits" },
+  "agy": { "from": "claude-opus-4-6-thinking", "into": "gemini-3.8-flash-low", "mode": "accept-edits" }
+}
+```
+
+The same file carries the Pi extension's `pi` section. A missing file means shipped
+defaults; invalid JSON warns once and means shipped defaults. Specifications and plans
+are kept locally under `docs/`, which is not tracked.
 
 ## Gate
 

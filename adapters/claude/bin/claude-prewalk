@@ -25,10 +25,12 @@ from_model="fable"
 into_model="sonnet"
 work_dir=""
 permission_mode=""
+from_set=""
+into_set=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --from) [ $# -ge 2 ] || usage; from_model="$2"; shift 2 ;;
-    --into) [ $# -ge 2 ] || usage; into_model="$2"; shift 2 ;;
+    --from) [ $# -ge 2 ] || usage; from_model="$2"; from_set=1; shift 2 ;;
+    --into) [ $# -ge 2 ] || usage; into_model="$2"; into_set=1; shift 2 ;;
     --cwd) [ $# -ge 2 ] || usage; work_dir="$2"; shift 2 ;;
     --permission-mode) [ $# -ge 2 ] || usage; permission_mode="$2"; shift 2 ;;
     --) shift; break ;;
@@ -39,6 +41,18 @@ while [ $# -gt 0 ]; do
 done
 [ $# -gt 0 ] || usage
 task="$*"
+# Flags win over ~/.config/prewalk/config.json, which wins over shipped defaults.
+config_values="$(python3 "$repo_dir/scripts/prewalk_config.py" claude from into permissionMode)" || config_values=""
+while IFS='=' read -r key value; do
+  [ -n "$key" ] || continue
+  case "$key" in
+    from) [ -n "$from_set" ] || from_model="$value" ;;
+    into) [ -n "$into_set" ] || into_model="$value" ;;
+    permissionMode) [ -n "$permission_mode" ] || permission_mode="$value" ;;
+  esac
+done <<CONFIG
+$config_values
+CONFIG
 [ -z "$work_dir" ] || cd "$work_dir"
 
 plan_nudge='Prewalk phase 1. Before any further exploration, write the complete plan for this task in your next reply: every remaining step in order with exact files, symbols, commands and checks; the risks and how each step is verified; what is already done. Then restate it as a numbered checklist of 5-9 concrete items, each naming its target and its verification, and use TodoWrite for it only if that tool exists. Then continue into implementation. Do not ask for approval: implementation of this exact scope is already approved. When a tool call is denied with a prewalk handoff reason, stop editing immediately and end your turn with a short summary of the remaining todo items.'
