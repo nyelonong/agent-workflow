@@ -87,9 +87,9 @@ class WorkflowContractTests(unittest.TestCase):
 
 
 class InstallerTests(unittest.TestCase):
-    def run_installer(self, home: Path, action: str = "install", check: bool = True) -> subprocess.CompletedProcess[str]:
+    def run_installer(self, home: Path, action: str = "install", check: bool = True, runtime: str = "agy") -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
-            [str(INSTALLER), "--home", str(home), action, "agy"],
+            [str(INSTALLER), "--home", str(home), action, runtime],
             cwd=ROOT,
             text=True,
             stdout=subprocess.PIPE,
@@ -170,6 +170,82 @@ class InstallerTests(unittest.TestCase):
 
             self.run_installer(home)
             self.assertEqual("before\nafter\n", agents.read_text(encoding="utf-8"))
+
+
+class CodexInstallerTests(InstallerTests):
+    RTK_LINE = "@/Users/zaki/.codex/RTK.md\n"
+
+    def seed(self, home: Path) -> Path:
+        agents = home / ".codex/AGENTS.md"
+        agents.parent.mkdir(parents=True)
+        agents.write_text(self.RTK_LINE, encoding="utf-8")
+        agents.chmod(0o640)
+        return agents
+
+    def test_install_appends_one_block_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = self.seed(home)
+            self.run_installer(home, runtime="codex")
+            first = self.snapshot(home)
+            self.run_installer(home, runtime="codex")
+            self.assertEqual(first, self.snapshot(home))
+            self.run_installer(home, "check", runtime="codex")
+
+            text = agents.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith(self.RTK_LINE), "the existing rtk line is preserved")
+            self.assertEqual(1, text.count("<!-- personal-workflow:codex:start -->"))
+            self.assertIn("## Independent review", text, "the policy is rendered inline")
+            self.assertIn("# Codex adapter", text)
+            self.assertNotIn("@" + str(ROOT / "policy.md"), text, "no include directive for Codex")
+            self.assertLess(len(text.encode("utf-8")), 24_576, "room under the 32 KiB instruction cap")
+            self.assertEqual(0o640, agents.stat().st_mode & 0o777)
+
+            for name in ("oracle", "reviewer"):
+                agent = home / f".codex/agents/{name}.toml"
+                self.assertEqual("# personal-workflow managed", agent.read_text().splitlines()[0])
+                self.assertIn('sandbox_mode = "read-only"', agent.read_text())
+            link = home / ".codex/skills/workflow"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(link)))
+
+    def test_install_refuses_unmanaged_agent_file_before_any_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = self.seed(home)
+            mine = home / ".codex/agents/oracle.toml"
+            mine.parent.mkdir(parents=True)
+            mine.write_text('name = "oracle"\n', encoding="utf-8")
+            result = self.run_installer(home, check=False, runtime="codex")
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("refusing", result.stderr)
+            self.assertEqual('name = "oracle"\n', mine.read_text(encoding="utf-8"))
+            self.assertEqual(self.RTK_LINE, agents.read_text(encoding="utf-8"), "preflight runs before the block is written")
+
+    def test_check_fails_when_block_is_stale_or_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = self.seed(home)
+            missing = self.run_installer(home, "check", check=False, runtime="codex")
+            self.assertNotEqual(0, missing.returncode)
+            self.run_installer(home, runtime="codex")
+            text = agents.read_text(encoding="utf-8").replace("# Codex adapter", "# Old adapter")
+            agents.write_text(text, encoding="utf-8")
+            stale = self.run_installer(home, "check", check=False, runtime="codex")
+            self.assertNotEqual(0, stale.returncode)
+            self.assertIn("differs", stale.stderr)
+            self.run_installer(home, runtime="codex")
+            self.run_installer(home, "check", runtime="codex")
+            self.assertEqual(1, agents.read_text().count("<!-- personal-workflow:codex:start -->"), "converged, not duplicated")
+
+    def test_agent_files_are_valid_toml_and_read_only(self) -> None:
+        import tomllib
+
+        for name in ("oracle", "reviewer"):
+            data = tomllib.loads((ROOT / f"adapters/codex/agents/{name}.toml").read_text(encoding="utf-8"))
+            self.assertEqual(name, data["name"])
+            self.assertEqual("read-only", data["sandbox_mode"])
+            self.assertIn("Do not edit, write, stage, commit", data["developer_instructions"])
 
 
 if __name__ == "__main__":

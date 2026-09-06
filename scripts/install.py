@@ -24,24 +24,43 @@ def fail(message: str) -> None:
     raise RuntimeError(message)
 
 
+CODEX_START = "<!-- personal-workflow:codex:start -->"
+CODEX_END = "<!-- personal-workflow:codex:end -->"
+MANAGED_HEADER = "# personal-workflow managed"
+
+
 def managed_block() -> str:
     adapter = (ROOT / "adapters/agy/GEMINI.md").read_text(encoding="utf-8").strip()
     return f"{GEMINI_START}\n@{ROOT / 'policy.md'}\n\n{adapter}\n{GEMINI_END}"
 
 
-def replace_marked_block(text: str, block: str) -> str:
-    has_start = GEMINI_START in text
-    has_end = GEMINI_END in text
+def codex_block() -> str:
+    # Codex documents no include directive, so the policy is rendered inline.
+    policy = (ROOT / "policy.md").read_text(encoding="utf-8").strip()
+    adapter = (ROOT / "adapters/codex/AGENTS.md").read_text(encoding="utf-8").strip()
+    return f"{CODEX_START}\n{policy}\n\n{adapter}\n{CODEX_END}"
+
+
+def replace_marked_block(
+    text: str,
+    block: str,
+    *,
+    start: str = GEMINI_START,
+    end: str = GEMINI_END,
+    label: str = "GEMINI.md",
+) -> str:
+    has_start = start in text
+    has_end = end in text
     if has_start != has_end:
-        fail("GEMINI.md contains an incomplete personal-workflow block")
+        fail(f"{label} contains an incomplete personal-workflow block")
     if has_start:
         pattern = re.compile(
-            rf"(?m)^{re.escape(GEMINI_START)}$.*?^{re.escape(GEMINI_END)}$",
+            rf"(?m)^{re.escape(start)}$.*?^{re.escape(end)}$",
             re.DOTALL,
         )
         if len(pattern.findall(text)) != 1:
-            fail("GEMINI.md must contain exactly one personal-workflow block")
-        return pattern.sub(block, text)
+            fail(f"{label} must contain exactly one personal-workflow block")
+        return pattern.sub(lambda _match: block, text)
     if not text:
         return block + "\n"
     return text.rstrip() + "\n\n" + block + "\n"
@@ -343,11 +362,79 @@ def check_claude(home: Path) -> None:
         check_link(source, target)
 
 
+def codex_agent_files(home: Path) -> list[tuple[Path, Path]]:
+    return [
+        (ROOT / "adapters/codex/agents/oracle.toml", home / ".codex/agents/oracle.toml"),
+        (ROOT / "adapters/codex/agents/reviewer.toml", home / ".codex/agents/reviewer.toml"),
+    ]
+
+
+def codex_links(home: Path) -> list[tuple[Path, Path]]:
+    return [(ROOT / "skills/workflow", home / ".codex/skills/workflow")]
+
+
+def preflight_managed_file(target: Path) -> None:
+    if not target.exists() or target.is_symlink():
+        if target.is_symlink():
+            fail(f"refusing to replace a link with a managed file: {target}")
+        return
+    first_line = target.read_text(encoding="utf-8").splitlines()[:1]
+    if first_line != [MANAGED_HEADER]:
+        fail(f"refusing to replace unmanaged path: {target}")
+
+
+def install_managed_file(source: Path, target: Path) -> None:
+    preflight_managed_file(target)
+    content = source.read_text(encoding="utf-8")
+    if not content.startswith(MANAGED_HEADER + "\n"):
+        fail(f"managed source lacks the header line: {source}")
+    if target.exists() and target.read_text(encoding="utf-8") == content:
+        return
+    atomic_write(target, content)
+
+
+def check_managed_file(source: Path, target: Path) -> None:
+    if not target.is_file() or target.read_text(encoding="utf-8") != source.read_text(encoding="utf-8"):
+        fail(f"managed file is missing or differs from source: {target}")
+
+
+def install_codex(home: Path) -> None:
+    agents_path = home / ".codex/AGENTS.md"
+    existing = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
+    rendered = replace_marked_block(existing, codex_block(), start=CODEX_START, end=CODEX_END, label="~/.codex/AGENTS.md")
+    for _, target in codex_agent_files(home):
+        preflight_managed_file(target)
+    for source, target in codex_links(home):
+        preflight_link(source, target)
+
+    if rendered != existing:
+        atomic_write(agents_path, rendered)
+    for source, target in codex_agent_files(home):
+        install_managed_file(source, target)
+    for source, target in codex_links(home):
+        install_link(source, target)
+
+
+def check_codex(home: Path) -> None:
+    agents_path = home / ".codex/AGENTS.md"
+    if not agents_path.is_file():
+        fail(f"managed file is missing: {agents_path}")
+    text = agents_path.read_text(encoding="utf-8")
+    if CODEX_START not in text:
+        fail(f"personal-workflow block is missing from {agents_path}")
+    if replace_marked_block(text, codex_block(), start=CODEX_START, end=CODEX_END, label="~/.codex/AGENTS.md") != text:
+        fail(f"managed block differs from source: {agents_path}")
+    for source, target in codex_agent_files(home):
+        check_managed_file(source, target)
+    for source, target in codex_links(home):
+        check_link(source, target)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install the personal workflow adapters")
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("action", choices=("install", "check"))
-    parser.add_argument("runtime", choices=("agy", "claude"))
+    parser.add_argument("runtime", choices=("agy", "claude", "codex"))
     return parser.parse_args()
 
 
@@ -359,6 +446,8 @@ def main() -> int:
             ("check", "agy"): check_agy,
             ("install", "claude"): install_claude,
             ("check", "claude"): check_claude,
+            ("install", "codex"): install_codex,
+            ("check", "codex"): check_codex,
         }
         actions[(args.action, args.runtime)](args.home)
     except RuntimeError as error:
