@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import subprocess
@@ -175,391 +174,70 @@ class InstallerTests(unittest.TestCase):
 
 
 class RenderPolicyTests(unittest.TestCase):
-    def test_render_uses_canonical_source(self) -> None:
-        source = ROOT / "policy/core.md"
+    PI_TEXT = (
+        "## Sync\n\nFirst rule line\nwraps here.\n\n<!-- pi-only:start -->\nIn Pi use `ask_decision`.\n<!-- pi-only:end -->\n\n"
+        "## Workflow\n\nSecond rule.\n\n<!-- pi-only:start -->\n## Pi ownership\n\nKeep `BASE_TOOLS` lean.\n<!-- pi-only:end -->\n"
+    )
+
+    def render(self, text: str, *args: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "AGENTS.md"
+            source.write_text(text, encoding="utf-8")
+            output = Path(tmp) / "policy.md"
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--output", str(output), *args],
+                text=True, capture_output=True,
+            )
+            result.rendered = output.read_text(encoding="utf-8") if output.exists() else None  # type: ignore[attr-defined]
+            return result
+
+    def test_render_strips_pi_only_blocks_and_unwraps_paragraphs(self) -> None:
+        result = self.render(self.PI_TEXT)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "# Personal engineering workflow\n\n## Sync\n\nFirst rule line wraps here.\n\n## Workflow\n\nSecond rule.\n",
+            result.rendered,
+        )
+
+    def test_render_refuses_unbalanced_markers(self) -> None:
+        for broken in (self.PI_TEXT.replace("<!-- pi-only:end -->\n\n## Workflow", "## Workflow", 1), "<!-- pi-only:end -->\n", "rule <!-- pi-only:start --> inline\n"):
+            result = self.render(broken)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("render_policy:", result.stderr)
+
+    def test_check_detects_stale_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "AGENTS.md"
+            source.write_text(self.PI_TEXT, encoding="utf-8")
+            output = Path(tmp) / "policy.md"
+            cmd = [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--output", str(output)]
+            self.assertNotEqual(0, subprocess.run(cmd + ["--check"], capture_output=True).returncode, "missing output is stale")
+            subprocess.run(cmd, check=True)
+            self.assertEqual(0, subprocess.run(cmd + ["--check"], capture_output=True).returncode)
+            source.write_text(self.PI_TEXT + "\nThird rule.\n", encoding="utf-8")
+            self.assertNotEqual(0, subprocess.run(cmd + ["--check"], capture_output=True).returncode)
+
+    def test_committed_policy_is_current_with_the_live_pi_file(self) -> None:
+        source = Path.home() / ".pi/agent/AGENTS.md"
+        if not source.is_file():
+            self.skipTest("Pi is not installed here")
         result = subprocess.run(
-            [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--output", str(ROOT / "policy.md"), "--check"],
-            text=True,
-            capture_output=True,
+            [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--check"], text=True, capture_output=True
         )
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(source.read_text(encoding="utf-8"), (ROOT / "policy.md").read_text(encoding="utf-8"))
-
-    def test_render_refuses_pi_markers_in_portable_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "core.md"
-            source.write_text("rule\n<!-- pi-only:start -->\n", encoding="utf-8")
-            result = subprocess.run(
-                [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source)], text=True, capture_output=True
-            )
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("Pi-only", result.stderr)
-
-    def test_pi_block_replacement_preserves_unmanaged_content(self) -> None:
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import render_policy
-
-        block = render_policy.pi_block("portable rule\n", "Pi rule\n")
-        original = "before\n\n" + block + "after\n"
-        updated = render_policy.replace_pi_block(original, block.replace("Pi rule", "new Pi rule"))
-        self.assertTrue(updated.startswith("before\n\n"))
-        self.assertTrue(updated.endswith("after\n"))
-        for broken in ("<!-- personal-workflow:pi:start -->\n", block + block):
-            with self.assertRaises(ValueError):
-                render_policy.replace_pi_block(broken, block)
 
 
 class PiInstallerTests(InstallerTests):
-    def test_install_is_idempotent_and_preserves_pi_content(self) -> None:
+    def test_check_and_render_use_the_home_pi_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            agents = home / ".pi/agent/AGENTS.md"
-            settings = home / ".pi/agent/settings.json"
-            agents.parent.mkdir(parents=True)
-            agents.write_text("unrelated rule\n", encoding="utf-8")
-            other_skill = home / "elsewhere.md"
-            other_skill.write_text("---\nname: elsewhere\n---\n", encoding="utf-8")
-            settings.write_text(json.dumps({"theme": "dark", "skills": [str(other_skill)]}) + "\n", encoding="utf-8")
-            self.run_installer(home, runtime="pi")
-            first = self.snapshot(home)
-            self.run_installer(home, runtime="pi")
-            self.assertEqual(first, self.snapshot(home))
-            self.run_installer(home, "check", runtime="pi")
-            self.assertTrue(agents.read_text(encoding="utf-8").startswith("unrelated rule\n"))
-            self.assertIn("<!-- personal-workflow:pi:start -->", agents.read_text(encoding="utf-8"))
-            data = __import__("json").loads(settings.read_text(encoding="utf-8"))
-            self.assertIn(str(ROOT / "skills/workflow"), data["skills"])
-            self.assertIn(str(ROOT / "adapters/pi/prompts"), data["prompts"])
-
-    def test_install_preflight_refuses_bad_settings_markers_and_collisions(self) -> None:
-        def write(path: Path, text: str) -> None:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
-
-        cases = (
-            ("settings", lambda home: write(home / ".pi/agent/settings.json", "[]")),
-            ("markers", lambda home: write(home / ".pi/agent/AGENTS.md", "<!-- personal-workflow:pi:start -->\n")),
-            ("collision", lambda home: write(home / ".pi/agent/skills/workflow/SKILL.md", "---\nname: workflow\n---\n")),
-        )
-        for name, seed in cases:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
-                home = Path(tmp)
-                seed(home)
-                before = self.snapshot(home)
-                result = self.run_installer(home, check=False, runtime="pi")
-                self.assertNotEqual(0, result.returncode)
-                self.assertEqual(before, self.snapshot(home))
-
-    def test_default_root_renamed_workflow_skill_collision_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            skill = home / ".pi/agent/skills/a-different-directory/SKILL.md"
-            skill.parent.mkdir(parents=True)
-            skill.write_text("---\nname: workflow\n---\n", encoding="utf-8")
-            # Other default-root resources remain available and are not collisions.
-            other_skill = home / ".pi/agent/skills/other/SKILL.md"
-            other_skill.parent.mkdir(parents=True)
-            other_skill.write_text("---\nname: another-skill\n---\n", encoding="utf-8")
-            prompt = home / ".pi/agent/prompts/unrelated.md"
-            prompt.parent.mkdir(parents=True)
-            prompt.write_text("prompt\n", encoding="utf-8")
-
-            before = self.snapshot(home)
-            result = self.run_installer(home, check=False, runtime="pi")
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("default-root resource collision", result.stderr)
-            self.assertIn(str(skill), result.stderr)
-            self.assertEqual(before, self.snapshot(home))
-
-    def test_default_root_noncolliding_resources_are_preserved(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            skill = home / ".pi/agent/skills/a-different-directory/SKILL.md"
-            skill.parent.mkdir(parents=True)
-            skill.write_text("---\nname: another-skill\n---\n", encoding="utf-8")
-            prompt = home / ".pi/agent/prompts/unrelated.md"
-            prompt.parent.mkdir(parents=True)
-            prompt.write_text("prompt\n", encoding="utf-8")
-
-            self.run_installer(home, runtime="pi")
-            self.assertEqual("---\nname: another-skill\n---\n", skill.read_text(encoding="utf-8"))
-            self.assertEqual("prompt\n", prompt.read_text(encoding="utf-8"))
-
-    def test_check_rejects_missing_entries_and_duplicate_settings_entries(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            self.run_installer(home, runtime="pi")
-            settings = home / ".pi/agent/settings.json"
-            data = __import__("json").loads(settings.read_text(encoding="utf-8"))
-            data["skills"].append(str(ROOT / "skills/workflow"))
-            settings.write_text(__import__("json").dumps(data), encoding="utf-8")
-            result = self.run_installer(home, "check", check=False, runtime="pi")
-            self.assertNotEqual(0, result.returncode)
-
-    def test_configured_sources_that_shadow_managed_resources_are_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            external = home / "external"
-            nested_skill = external / "skills/nested/SKILL.md"
-            nested_skill.parent.mkdir(parents=True)
-            nested_skill.write_text("---\nname: workflow\n---\n", encoding="utf-8")
-            prompts = external / "prompts"
-            prompts.mkdir(parents=True)
-            (prompts / "prepush.md").write_text("prompt\n", encoding="utf-8")
-            settings = home / ".pi/agent/settings.json"
-            settings.parent.mkdir(parents=True)
-            settings.write_text(json.dumps({"skills": [str(external / "skills")], "prompts": [str(prompts)]}), encoding="utf-8")
-
-            before = self.snapshot(home)
-            result = self.run_installer(home, check=False, runtime="pi")
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("configured skills source", result.stderr)
-            self.assertEqual(before, self.snapshot(home))
-
-    def test_configured_prompt_file_that_shadows_a_managed_command_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            prompt = home / "external/prepush.md"
-            prompt.parent.mkdir(parents=True)
-            prompt.write_text("prompt\n", encoding="utf-8")
-            settings = home / ".pi/agent/settings.json"
-            settings.parent.mkdir(parents=True)
-            settings.write_text(json.dumps({"prompts": [str(prompt)]}), encoding="utf-8")
-
-            result = self.run_installer(home, check=False, runtime="pi")
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("configured prompts source", result.stderr)
-
-    def test_configured_source_aliases_and_unverifiable_sources_are_rejected(self) -> None:
-        cases = (
-            ("canonical alias", {"skills": [str(ROOT / "skills/workflow") + "/"]}),
-            ("missing", {"prompts": ["/does/not/exist"]}),
-            ("cwd relative", {"skills": ["relative/skills"]}),
-        )
-        for name, settings_data in cases:
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
-                home = Path(tmp)
-                settings = home / ".pi/agent/settings.json"
-                settings.parent.mkdir(parents=True)
-                settings.write_text(json.dumps(settings_data), encoding="utf-8")
-                before = self.snapshot(home)
-                result = self.run_installer(home, check=False, runtime="pi")
-                self.assertNotEqual(0, result.returncode)
-                self.assertIn("configured", result.stderr)
-                self.assertEqual(before, self.snapshot(home))
-
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            alias = home / "workflow-alias"
-            alias.symlink_to(ROOT / "skills/workflow", target_is_directory=True)
-            settings = home / ".pi/agent/settings.json"
-            settings.parent.mkdir(parents=True)
-            settings.write_text(json.dumps({"skills": [str(alias)]}), encoding="utf-8")
-            result = self.run_installer(home, check=False, runtime="pi")
-            self.assertNotEqual(0, result.returncode)
-            self.assertIn("source alias", result.stderr)
-
-    def test_pi_block_update_preserves_unmanaged_bytes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            agents = home / ".pi/agent/AGENTS.md"
-            agents.parent.mkdir(parents=True)
-            prefix = "prefix \t\n"
-            suffix = "suffix \t\n\n"
-            agents.write_text(
-                prefix
-                + "<!-- personal-workflow:pi:start -->\nold\n<!-- personal-workflow:pi:end -->\n"
-                + suffix,
-                encoding="utf-8",
-            )
-            self.run_installer(home, runtime="pi")
-            updated = agents.read_text(encoding="utf-8")
-            self.assertTrue(updated.startswith(prefix))
-            self.assertTrue(updated.endswith(suffix))
-
-            markerless = "unmanaged trailing whitespace \t"
-            agents.write_text(markerless, encoding="utf-8")
-            self.run_installer(home, runtime="pi")
-            self.assertTrue(agents.read_text(encoding="utf-8").startswith(markerless))
-
-    def test_pi_crlf_splices_preserve_unmanaged_bytes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            agents = home / ".pi/agent/AGENTS.md"
-            settings = home / ".pi/agent/settings.json"
-            agents.parent.mkdir(parents=True)
-            prefix = b"prefix \t\r\n"
-            suffix = b"suffix \t\r\n\r\n"
-            agents.write_bytes(
-                prefix
-                + b"<!-- personal-workflow:pi:start -->\r\nold\r\n<!-- personal-workflow:pi:end -->\r\n"
-                + suffix
-            )
-            settings_prefix = b" \t\r\n"
-            settings_suffix = b"\r\n \t"
-            settings.write_bytes(settings_prefix + b'{"theme": "dark"}' + settings_suffix)
-
-            self.run_installer(home, runtime="pi")
-            updated_agents = agents.read_bytes()
-            updated_settings = settings.read_bytes()
-            self.assertTrue(updated_agents.startswith(prefix))
-            self.assertTrue(updated_agents.endswith(suffix))
-            self.assertTrue(updated_settings.startswith(settings_prefix))
-            self.assertTrue(updated_settings.endswith(settings_suffix))
-            self.assertNotIn(b"\n", updated_agents.replace(b"\r\n", b""))
-            self.assertNotIn(b"\n", updated_settings.replace(b"\r\n", b""))
-
-            markerless = b"unmanaged trailing whitespace \t\r\n"
-            agents.write_bytes(markerless)
-            self.run_installer(home, runtime="pi")
-            self.assertTrue(agents.read_bytes().startswith(markerless))
-
-    def test_pi_file_symlinks_are_preserved(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            linked = home / "linked"
-            linked.mkdir()
-            agents_target = linked / "AGENTS.md"
-            settings_target = linked / "settings.json"
-            agents_target.write_text("unmanaged\n", encoding="utf-8")
-            settings_target.write_text('{"theme": "dark"}\n', encoding="utf-8")
-            agent_dir = home / ".pi/agent"
-            agent_dir.mkdir(parents=True)
-            agents = agent_dir / "AGENTS.md"
-            settings = agent_dir / "settings.json"
-            agents.symlink_to(agents_target)
-            settings.symlink_to(settings_target)
-
-            self.run_installer(home, runtime="pi")
-            self.assertTrue(agents.is_symlink())
-            self.assertTrue(settings.is_symlink())
-            self.assertIn("personal-workflow:pi:start", agents_target.read_text(encoding="utf-8"))
-            self.assertIn(str(ROOT / "skills/workflow"), json.loads(settings_target.read_text(encoding="utf-8"))["skills"])
-            self.run_installer(home, "check", runtime="pi")
-
-
-class PolicyFreshnessTests(InstallerTests):
-    def test_policy_staleness_blocks_consuming_installs_and_checks_before_writes(self) -> None:
-        policy = ROOT / "policy.md"
-        original = policy.read_bytes()
-        try:
-            policy.write_text("stale\n", encoding="utf-8")
-            for runtime, action in (
-                ("agy", "install"),
-                ("agy", "check"),
-                ("codex", "install"),
-                ("codex", "check"),
-                ("pi", "install"),
-                ("pi", "check"),
-                ("claude", "install"),
-                ("claude", "check"),
-            ):
-                with self.subTest(runtime=runtime, action=action), tempfile.TemporaryDirectory() as tmp:
-                    home = Path(tmp)
-                    before = self.snapshot(home)
-                    result = self.run_installer(home, action, check=False, runtime=runtime)
-                    self.assertNotEqual(0, result.returncode)
-                    self.assertIn("stale", result.stderr)
-                    self.assertEqual(before, self.snapshot(home))
-        finally:
-            policy.write_bytes(original)
-
-
-class ClaudeInstallerTests(InstallerTests):
-    def test_install_owns_policy_workflow_and_roles(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            policy = home / ".claude/CLAUDE.md"
-            policy.parent.mkdir(parents=True)
-            policy.write_text(
-                "unrelated rule\n<!-- homie:baseline-golang legacy -->\nold managed rules\n"
-                "<!-- agents:global-rules:end -->\nunrelated suffix\n",
-                encoding="utf-8",
-            )
-            policy.chmod(0o640)
-
-            self.run_installer(home, runtime="claude")
-            self.run_installer(home, "check", runtime="claude")
-            text = policy.read_text(encoding="utf-8")
-            self.assertTrue(text.startswith("unrelated rule\n"))
-            self.assertIn("unrelated suffix\n", text)
-            self.assertNotIn("old managed rules", text)
-            self.assertEqual(1, text.count("<!-- personal-workflow:claude:start -->"))
-            self.assertIn(f"@{ROOT / 'policy.md'}", text)
-            self.assertEqual(0o640, policy.stat().st_mode & 0o777)
-            for source, target in (
-                (ROOT / "skills/workflow", home / ".claude/skills/workflow"),
-                (ROOT / "adapters/claude/agents/architect.md", home / ".claude/agents/architect.md"),
-                (ROOT / "adapters/claude/agents/reviewer.md", home / ".claude/agents/reviewer.md"),
-            ):
-                self.assertTrue(target.is_symlink())
-                self.assertEqual(source, Path(os.readlink(target)))
-
-    def test_current_marker_crlf_splice_preserves_unmanaged_bytes_and_mode(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            policy = home / ".claude/CLAUDE.md"
-            policy.parent.mkdir(parents=True)
-            prefix = b"prefix \t\r\n"
-            suffix = b"suffix \t\r\n\r\n"
-            policy.write_bytes(
-                prefix
-                + b"<!-- personal-workflow:claude:start -->\r\nold\r\n<!-- personal-workflow:claude:end -->\r\n"
-                + suffix
-            )
-            policy.chmod(0o640)
-
-            self.run_installer(home, runtime="claude")
-            updated = policy.read_bytes()
-            self.assertTrue(updated.startswith(prefix))
-            self.assertTrue(updated.endswith(suffix))
-            self.assertNotIn(b"\n", updated.replace(b"\r\n", b""))
-            self.assertEqual(0o640, policy.stat().st_mode & 0o777)
-            self.run_installer(home, "check", runtime="claude")
-
-    def test_legacy_marker_crlf_splice_preserves_unmanaged_bytes_and_symlink(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            target = home / "owner/CLAUDE.md"
-            target.parent.mkdir(parents=True)
-            prefix = b"prefix \t\r\n"
-            suffix = b"suffix \t\r\n\r\n"
-            target.write_bytes(
-                prefix
-                + b"<!-- homie:baseline-golang legacy -->\r\nold\r\n<!-- agents:global-rules:end -->\r\n"
-                + suffix
-            )
-            target.chmod(0o640)
-            policy = home / ".claude/CLAUDE.md"
-            policy.parent.mkdir(parents=True)
-            policy.symlink_to(target)
-
-            self.run_installer(home, runtime="claude")
-            updated = target.read_bytes()
-            self.assertTrue(policy.is_symlink())
-            self.assertTrue(updated.startswith(prefix))
-            self.assertTrue(updated.endswith(suffix))
-            self.assertNotIn(b"\n", updated.replace(b"\r\n", b""))
-            self.assertEqual(0o640, target.stat().st_mode & 0o777)
-            self.run_installer(home, "check", runtime="claude")
-
-    def test_install_writes_through_policy_symlink_after_complete_preflight(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp)
-            target = home / "owned/CLAUDE.md"
-            target.parent.mkdir(parents=True)
-            target.write_text("unrelated rule\n", encoding="utf-8")
-            policy = home / ".claude/CLAUDE.md"
-            policy.parent.mkdir(parents=True)
-            policy.symlink_to(target)
-            unmanaged = home / ".claude/skills/workflow"
-            unmanaged.mkdir(parents=True)
-            (unmanaged / "SKILL.md").write_text("unrelated\n", encoding="utf-8")
-
-            result = self.run_installer(home, check=False, runtime="claude")
-            self.assertNotEqual(0, result.returncode)
-            self.assertTrue(policy.is_symlink())
-            self.assertEqual("unrelated rule\n", target.read_text(encoding="utf-8"))
+            missing = self.run_installer(home, "check", check=False, runtime="pi")
+            self.assertNotEqual(0, missing.returncode)
+            self.assertIn("missing", missing.stderr)
+            install = self.run_installer(home, "install", check=False, runtime="pi")
+            self.assertNotEqual(0, install.returncode, "pi has no install action")
+            render_not_pi = self.run_installer(home, "render", check=False, runtime="agy")
+            self.assertNotEqual(0, render_not_pi.returncode)
 
 
 class CodexInstallerTests(InstallerTests):

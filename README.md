@@ -15,29 +15,18 @@ The installer manages one marked block in `~/.gemini/GEMINI.md`, the global `wor
 
 ## Pi
 
-`policy/core.md` is the editable portable policy, and `adapters/pi/AGENTS.md`
-contains Pi-only mechanics. `policy.md` is generated from the portable source.
-`install pi` owns one marked block in `~/.pi/agent/AGENTS.md` and one exact entry
-for each of the workflow skill and Pi prompt directory in `settings.json`; it
-preserves unrelated content and refuses active default-root duplicates. It also
-checks existing configured absolute or `~/` skill and prompt sources for the
-managed names (resolving links and aliases); missing or cwd-relative sources
-fail rather than being assumed safe. Pi package and extension resources are
-not enumerable from this local settings updater, so migration checks discover
-them afresh instead of claiming they were verified.
+Pi's `~/.pi/agent/AGENTS.md` is the hand-written master of the rules. Sentences that
+only mean something inside Pi sit between `<!-- pi-only:start -->` and
+`<!-- pi-only:end -->`. `policy.md` in this repository is generated from that file:
 
 ```sh
-./install.sh render pi   # regenerate policy.md from policy/core.md
-./install.sh install pi  # install only owned Pi resources
-./install.sh check pi    # verify generated policy and managed Pi resources
+./install.sh render pi   # regenerate policy.md after editing the Pi file
+./install.sh check pi    # fails when policy.md is stale
 ```
 
-Pi extensions remain Pi-owned. Claude Code, Codex, and Antigravity consume the
-generated `policy.md`; their install and check commands fail when it is stale.
-Re-run `install codex` after a policy change, since Codex holds a rendered copy.
-Pi writes `AGENTS.md` and `settings.json` atomically only after complete semantic
-preflight, but they are not one cross-file transaction. Use the Git-backed
-migration/re-run path to recover an interruption. See [control-plane ownership](ARCHITECTURE.md).
+Nothing writes into `~/.pi/agent`. Claude Code, Codex, and Antigravity consume the
+generated `policy.md`; re-run `install codex` after a change, since Codex holds a
+rendered copy.
 
 ## Codex
 
@@ -55,20 +44,12 @@ policy change; `check codex` reports a stale block.
 
 ## Claude Code
 
-```sh
-./install.sh install claude
-./install.sh check claude
-```
-
-These commands directly own the personal-workflow block in `~/.claude/CLAUDE.md`,
-the workflow skill and role links, and the managed prewalk integration. `claude-config`
-is only a delegating caller of this installer; it does not own this workflow content.
+`~/Projects/personal/claude-config/bootstrap.sh --links-only` consumes the Claude adapter, workflow skill, and role definitions from this repository. Claude configuration remains owned by `claude-config`.
 
 ## Prewalk
 
 `./install.sh install claude` adds the prewalk hooks to `~/.claude/settings.json`
-beside existing hooks and links `~/.local/bin/claude-prewalk`; it is the direct
-Claude workflow owner even when invoked by `claude-config`. `./install.sh install agy`
+beside existing hooks and links `~/.local/bin/claude-prewalk`. `./install.sh install agy`
 adds a `prewalk` block to `~/.gemini/config/hooks.json` beside other blocks and links
 `~/.local/bin/agy-prewalk`. `claude-prewalk -- <task>` and `agy-prewalk -- <task>` run a
 strong model until its first edit, then resume the same session on a cheaper model. The
