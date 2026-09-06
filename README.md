@@ -11,7 +11,7 @@ The package intentionally does not emulate Pi-only tools. Each runtime uses its 
 ./install.sh check agy
 ```
 
-The installer manages one marked block in `~/.gemini/GEMINI.md`, the global `workflow` skill, and the `oracle` and `reviewer` agents. It removes the old marked Galdr block from `~/.gemini/AGENTS.md` while preserving unrelated content.
+The installer manages one marked block in `~/.gemini/GEMINI.md`, the global `workflow` skill, and the `architect` and `reviewer` agents. It removes the old marked Galdr block from `~/.gemini/AGENTS.md` while preserving unrelated content.
 
 ## Pi
 
@@ -37,7 +37,7 @@ rendered copy.
 
 Codex documents no include directive for its instructions file, so the installer
 renders `policy.md` inline into one marked block in `~/.codex/AGENTS.md`, keeping
-everything outside the block. It also writes read-only `oracle` and `reviewer`
+everything outside the block. It also writes read-only `architect` and `reviewer`
 agents to `~/.codex/agents/` (each starts with `# personal-workflow managed`) and
 links the `workflow` skill into `~/.codex/skills/`. Re-run `install codex` after a
 policy change; `check codex` reports a stale block.

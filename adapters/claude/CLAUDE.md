@@ -5,7 +5,7 @@
 
 Use Claude Code's native question interface for required decisions. Ask one concrete question, recommend one option, and stop until the user answers. Never treat a permission prompt as product or implementation approval.
 
-Load the personal `workflow` skill when the user invokes `/workflow` or asks to run the workflow. For approved multi-task planning, use only the `oracle` agent. Use the `reviewer` agent only when the global independent-review boundary applies, the user requests it, or credible uncertainty justifies optional review. Ordinary parent work needs no agent delegation.
+Load the personal `workflow` skill when the user invokes `/workflow` or asks to run the workflow. For approved multi-task planning, use only the `architect` agent. Use the `reviewer` agent only when the global independent-review boundary applies, the user requests it, or credible uncertainty justifies optional review. Ordinary parent work needs no agent delegation.
 
 For Go work, load `golang-how-to` before design, implementation, review, debugging, or refactoring; load its detailed skills only when the task needs them.
 

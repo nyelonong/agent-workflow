@@ -21,7 +21,7 @@ class WorkflowContractTests(unittest.TestCase):
         for required in (
             "production implementation requires explicit approval",
             "clear, routine single change",
-            "exactly one oracle",
+            "exactly one architect",
             "one complete uncommitted review packet",
             "fresh independent review is mandatory only when",
             "application runtime behavior",
@@ -37,7 +37,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("no production code without a failing test first", lowered)
         self.assertNotIn("routing:", lowered)
 
-        self.assertIn("exactly one `oracle`", workflow)
+        self.assertIn("exactly one `architect`", workflow)
         self.assertIn("parent implements", workflow)
         self.assertIn("complete uncommitted review packet", workflow)
         self.assertIn("no mandatory subagent review", workflow)
@@ -76,9 +76,9 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_native_role_layouts_are_present_and_read_only(self) -> None:
         paths = (
-            ROOT / "adapters/claude/agents/oracle.md",
+            ROOT / "adapters/claude/agents/architect.md",
             ROOT / "adapters/claude/agents/reviewer.md",
-            ROOT / "adapters/agy/agents/oracle/agent.md",
+            ROOT / "adapters/agy/agents/architect/agent.md",
             ROOT / "adapters/agy/agents/reviewer/agent.md",
         )
         for path in paths:
@@ -121,7 +121,7 @@ class InstallerTests(unittest.TestCase):
             gemini = (home / ".gemini/GEMINI.md").read_text(encoding="utf-8")
             self.assertIn(f"@{ROOT / 'policy.md'}", gemini)
             self.assertTrue((home / ".gemini/config/skills/workflow/SKILL.md").is_file())
-            self.assertTrue((home / ".gemini/config/agents/oracle/agent.md").is_file())
+            self.assertTrue((home / ".gemini/config/agents/architect/agent.md").is_file())
             self.assertTrue((home / ".gemini/config/agents/reviewer/agent.md").is_file())
 
     def test_install_preserves_unrelated_gemini_content_and_mode(self) -> None:
@@ -270,7 +270,7 @@ class CodexInstallerTests(InstallerTests):
             self.assertLess(len(text.encode("utf-8")), 24_576, "room under the 32 KiB instruction cap")
             self.assertEqual(0o640, agents.stat().st_mode & 0o777)
 
-            for name in ("oracle", "reviewer"):
+            for name in ("architect", "reviewer"):
                 agent = home / f".codex/agents/{name}.toml"
                 self.assertEqual("# personal-workflow managed", agent.read_text().splitlines()[0])
                 self.assertIn('sandbox_mode = "read-only"', agent.read_text())
@@ -282,13 +282,13 @@ class CodexInstallerTests(InstallerTests):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             agents = self.seed(home)
-            mine = home / ".codex/agents/oracle.toml"
+            mine = home / ".codex/agents/architect.toml"
             mine.parent.mkdir(parents=True)
-            mine.write_text('name = "oracle"\n', encoding="utf-8")
+            mine.write_text('name = "architect"\n', encoding="utf-8")
             result = self.run_installer(home, check=False, runtime="codex")
             self.assertNotEqual(0, result.returncode)
             self.assertIn("refusing", result.stderr)
-            self.assertEqual('name = "oracle"\n', mine.read_text(encoding="utf-8"))
+            self.assertEqual('name = "architect"\n', mine.read_text(encoding="utf-8"))
             self.assertEqual(self.RTK_LINE, agents.read_text(encoding="utf-8"), "preflight runs before the block is written")
 
     def test_check_fails_when_block_is_stale_or_missing(self) -> None:
@@ -310,7 +310,7 @@ class CodexInstallerTests(InstallerTests):
     def test_agent_files_are_valid_toml_and_read_only(self) -> None:
         import tomllib
 
-        for name in ("oracle", "reviewer"):
+        for name in ("architect", "reviewer"):
             data = tomllib.loads((ROOT / f"adapters/codex/agents/{name}.toml").read_text(encoding="utf-8"))
             self.assertEqual(name, data["name"])
             self.assertEqual("read-only", data["sandbox_mode"])

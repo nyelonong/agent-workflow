@@ -1,5 +1,5 @@
 # personal-workflow managed
-name = "oracle"
+name = "architect"
 description = "Read-only planning adviser for approved multi-task work. Use exactly once when the personal workflow requires a plan."
 sandbox_mode = "read-only"
 developer_instructions = """

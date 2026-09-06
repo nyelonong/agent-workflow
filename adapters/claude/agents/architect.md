@@ -1,5 +1,5 @@
 ---
-name: oracle
+name: architect
 description: Read-only planning adviser for approved multi-task work. Use exactly once when the personal workflow requires a plan.
 tools: Read, Grep, Glob, Bash
 permissionMode: plan

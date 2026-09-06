@@ -11,7 +11,7 @@ Follow the global personal engineering policy. Use the runtime's native user-dec
 
 - For a clear, routine single change, skip specification and plan artifacts. Obtain implementation approval and continue directly.
 - For fuzzy work, shape a concise specification and stop for approval.
-- For approved multi-task work, consult exactly one `oracle`, reconcile its advice, write one ordered plan, and stop for plan approval.
+- For approved multi-task work, consult exactly one `architect`, reconcile its advice, write one ordered plan, and stop for plan approval.
 - Read-only investigation, review, and verification do not require implementation approval.
 
 ## Implementation

@@ -136,7 +136,7 @@ def check_directory(source: Path, target: Path) -> None:
 def agy_paths(home: Path) -> list[tuple[Path, Path]]:
     return [
         (ROOT / "skills/workflow", home / ".gemini/config/skills/workflow"),
-        (ROOT / "adapters/agy/agents/oracle", home / ".gemini/config/agents/oracle"),
+        (ROOT / "adapters/agy/agents/architect", home / ".gemini/config/agents/architect"),
         (ROOT / "adapters/agy/agents/reviewer", home / ".gemini/config/agents/reviewer"),
     ]
 
@@ -365,7 +365,7 @@ def check_claude(home: Path) -> None:
 
 def codex_agent_files(home: Path) -> list[tuple[Path, Path]]:
     return [
-        (ROOT / "adapters/codex/agents/oracle.toml", home / ".codex/agents/oracle.toml"),
+        (ROOT / "adapters/codex/agents/architect.toml", home / ".codex/agents/architect.toml"),
         (ROOT / "adapters/codex/agents/reviewer.toml", home / ".codex/agents/reviewer.toml"),
     ]
 
