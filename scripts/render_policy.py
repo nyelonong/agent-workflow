@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Render the portable policy from Pi's global instructions.
-
-    render_policy.py <pi-agents-md> [--output policy.md] [--check]
-
-Pi's AGENTS.md is the hand-written master. Paragraphs between
-`<!-- pi-only:start -->` and `<!-- pi-only:end -->` are Pi mechanics and are
-dropped; everything else becomes policy.md under a fixed title.
-"""
+"""Render portable policy and compose the managed Pi policy block from canonical sources."""
 from __future__ import annotations
 
 import argparse
@@ -14,46 +7,77 @@ import re
 import sys
 from pathlib import Path
 
-START = "<!-- pi-only:start -->"
-END = "<!-- pi-only:end -->"
-TITLE = "# Personal engineering workflow"
+ROOT = Path(__file__).resolve().parents[1]
+PI_START = "<!-- personal-workflow:pi:start -->"
+PI_END = "<!-- personal-workflow:pi:end -->"
+
+
+def read_source(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError(f"{path} is empty")
+    return text.rstrip() + "\n"
 
 
 def render(source: str) -> str:
-    out: list[str] = []
-    inside = False
-    for number, line in enumerate(source.splitlines(), start=1):
-        stripped = line.strip()
-        if stripped == START:
-            if inside:
-                raise ValueError(f"line {number}: nested {START}")
-            inside = True
-            continue
-        if stripped == END:
-            if not inside:
-                raise ValueError(f"line {number}: {END} without a start")
-            inside = False
-            continue
-        if START in line or END in line:
-            raise ValueError(f"line {number}: marker must stand alone on its line")
-        if not inside:
-            out.append(line.rstrip())
-    if inside:
-        raise ValueError(f"unterminated {START}")
-    body = re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip("\n")
-    # Pi keeps hard-wrapped prose; the portable file uses one line per paragraph.
-    paragraphs = [" ".join(part.split("\n")) if not part.startswith("#") else part for part in body.split("\n\n")]
-    return f"{TITLE}\n\n" + "\n\n".join(paragraphs) + "\n"
+    """Return canonical portable policy with a stable trailing newline."""
+    if "<!-- pi-only:" in source:
+        raise ValueError("portable policy must not contain Pi-only markers")
+    return source.rstrip() + "\n"
+
+
+def pi_block(policy: str, adapter: str) -> str:
+    if PI_START in policy or PI_END in policy or PI_START in adapter or PI_END in adapter:
+        raise ValueError("Pi managed markers belong to the renderer, not a source")
+    return f"{PI_START}\n{render(policy).rstrip()}\n\n{adapter.rstrip()}\n{PI_END}\n"
+
+
+def replace_pi_block_bytes(content: bytes, block: str) -> bytes:
+    """Splice a Pi block without normalizing unmanaged bytes or line endings."""
+    start = PI_START.encode("ascii")
+    end = PI_END.encode("ascii")
+    starts = content.count(start)
+    ends = content.count(end)
+    if starts != ends:
+        raise ValueError("Pi instructions contain incomplete managed markers")
+    if starts > 1:
+        raise ValueError("Pi instructions contain duplicate managed blocks")
+
+    newline = b"\r\n" if b"\r\n" in content else b"\n"
+    rendered = block.encode("utf-8").replace(b"\n", newline)
+    if starts:
+        pattern = re.compile(
+            rb"(?m)^" + re.escape(start) + rb"\r?$.*?^" + re.escape(end) + rb"\r?$",
+            re.DOTALL,
+        )
+        matches = list(pattern.finditer(content))
+        if len(matches) != 1:
+            raise ValueError("Pi instructions contain malformed managed block")
+        match = matches[0]
+        # The newline after the end marker belongs to the unmanaged suffix. The
+        # regex consumes CR before LF under multiline matching, so restore it.
+        suffix_cr = b"\r" if content[match.end() - 1 : match.end()] == b"\r" else b""
+        return content[: match.start()] + rendered.rstrip(b"\r\n") + suffix_cr + content[match.end() :]
+    if not content:
+        return rendered
+    # Preserve markerless instructions exactly, including trailing whitespace.
+    separator = b"" if content.endswith(newline * 2) else newline if content.endswith(newline) else newline * 2
+    return content + separator + rendered
+
+
+def replace_pi_block(text: str, block: str) -> str:
+    """Text compatibility wrapper for callers that do not require byte preservation."""
+    return replace_pi_block_bytes(text.encode("utf-8"), block).decode("utf-8")
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("source", type=Path)
-    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parents[1] / "policy.md")
-    parser.add_argument("--check", action="store_true", help="exit 1 when the output is stale instead of writing")
+    parser.add_argument("source", type=Path, nargs="?", default=ROOT / "policy/core.md")
+    parser.add_argument("--output", type=Path, default=ROOT / "policy.md")
+    parser.add_argument("--check", action="store_true", help="exit 1 when output is stale instead of writing")
     args = parser.parse_args(argv[1:])
     try:
-        rendered = render(args.source.read_text(encoding="utf-8"))
+        rendered = render(read_source(args.source))
     except (OSError, ValueError) as error:
         print(f"render_policy: {error}", file=sys.stderr)
         return 1
