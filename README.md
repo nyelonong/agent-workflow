@@ -44,7 +44,7 @@ policy change; `check codex` reports a stale block.
 
 ## Claude Code
 
-`~/Projects/personal/claude-config/bootstrap.sh --links-only` consumes the Claude adapter, workflow skill, and role definitions from this repository. Claude configuration remains owned by `claude-config`.
+`~/Projects/personal/claude-config/bootstrap.sh --links-only` consumes the Claude adapter, workflow skill, and role definitions from this repository. Claude configuration remains owned by `claude-config`. `./install.sh install claude` also links Pi's `go-engineering` skill from `~/.pi/agent/skills` into `~/.claude/skills`, so Go work in Claude uses the same skill as Pi.
 
 ## Prewalk
 

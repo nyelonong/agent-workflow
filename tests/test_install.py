@@ -72,7 +72,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertNotIn(pi_only, policy)
         self.assertLessEqual(len(policy), 12_000)
         self.assertLessEqual(len(policy.splitlines()), 200)
-        self.assertIn("`golang-how-to`", claude)
+        self.assertIn("`go-engineering`", claude)
 
     def test_native_role_layouts_are_present_and_read_only(self) -> None:
         paths = (
@@ -238,6 +238,33 @@ class PiInstallerTests(InstallerTests):
             self.assertNotEqual(0, install.returncode, "pi has no install action")
             render_not_pi = self.run_installer(home, "render", check=False, runtime="agy")
             self.assertNotEqual(0, render_not_pi.returncode)
+
+
+class ClaudeInstallerTests(InstallerTests):
+    def test_install_links_pi_go_skill_and_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            (home / ".claude").mkdir()
+            self.run_installer(home, runtime="claude")
+            first = self.snapshot(home)
+            self.run_installer(home, runtime="claude")
+            self.assertEqual(first, self.snapshot(home))
+            self.run_installer(home, "check", runtime="claude")
+
+            link = home / ".claude/skills/go-engineering"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(home / ".pi/agent/skills/go-engineering", Path(os.readlink(link)))
+
+    def test_install_refuses_a_go_skill_link_that_points_elsewhere(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            link = home / ".claude/skills/go-engineering"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(home / "elsewhere")
+            result = self.run_installer(home, check=False, runtime="claude")
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("refusing", result.stderr)
+            self.assertFalse((home / ".claude/prewalk.json").exists(), "preflight runs before any link is written")
 
 
 class CodexInstallerTests(InstallerTests):

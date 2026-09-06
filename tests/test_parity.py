@@ -19,7 +19,7 @@ PI_SKILL = Path.home() / ".pi/agent/skills/workflow/SKILL.md"
 
 MECHANICS = {
     "pi": ("ask_decision", "workflowScript", "vcc_recall", "/council", "pi-subagents"),
-    "claude": ("Claude Code", "golang-how-to", "/graphify"),
+    "claude": ("Claude Code", "/graphify"),
     "agy": ("Antigravity",),
     "codex": ("spawn", "$workflow", "Codex"),
 }

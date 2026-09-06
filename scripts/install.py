@@ -322,6 +322,8 @@ def claude_links(home: Path) -> list[tuple[Path, Path]]:
     return [
         (ROOT / "adapters/claude/bin/claude-prewalk", home / ".local/bin/claude-prewalk"),
         (ROOT / "adapters/claude/prewalk.json", home / ".claude/prewalk.json"),
+        # Pi owns the Go skill; Claude consumes it read-only through this link.
+        (home / ".pi/agent/skills/go-engineering", home / ".claude/skills/go-engineering"),
     ]
 
 
