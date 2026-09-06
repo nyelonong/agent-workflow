@@ -131,10 +131,11 @@ class WrapperTests(unittest.TestCase):
             })
             if fail_phase1:
                 env["FAKE_AGY_FAIL"] = "1"
-            env["XDG_CONFIG_HOME"] = str(Path(tmp) / "xdg")
+            env["HOME"] = str(Path(tmp) / "home")
+            (Path(tmp) / "home").mkdir()
             if config is not None:
-                (Path(tmp) / "xdg/prewalk").mkdir(parents=True)
-                (Path(tmp) / "xdg/prewalk/config.json").write_text(config)
+                (Path(tmp) / "home/.gemini").mkdir()
+                (Path(tmp) / "home/.gemini/prewalk.json").write_text(config)
             result = subprocess.run([str(WRAPPER), *args], text=True, capture_output=True, env=env, cwd=tmp)
             lines = log.read_text().splitlines() if log.exists() else []
             leftover = [p for p in Path(tmp).iterdir() if p.name.startswith("agy-prewalk.")]
@@ -167,7 +168,7 @@ class WrapperTests(unittest.TestCase):
         self.assertIn("leftover:0", lines)
 
     def test_config_file_sets_defaults_and_flags_win(self) -> None:
-        config = json.dumps({"agy": {"from": "gemini-3.1-pro-high", "into": "gemini-3.8-flash-medium", "mode": "plan"}})
+        config = json.dumps({"from": "gemini-3.1-pro-high", "into": "gemini-3.8-flash-medium", "mode": "plan"})
         _, lines = self.run_wrapper("edit\n", "--", "task", config=config)
         self.assertIn("--model gemini-3.1-pro-high --mode plan", lines[0])
         self.assertIn("--model gemini-3.8-flash-medium -i", [l for l in lines if l.startswith("--conversation")][0])
@@ -220,6 +221,9 @@ class InstallerTests(unittest.TestCase):
             env = {**os.environ, "HOME": str(home)}
             subprocess.run([str(INSTALLER), "--home", str(home), "install", "agy"], cwd=ROOT, check=True, env=env, capture_output=True)
             self.assertEqual(["PreInvocation", "Stop", "PreToolUse", "PostToolUse"], list(json.loads((home / ".gemini/config/hooks.json").read_text())["prewalk"]))
+            config_link = home / ".gemini/prewalk.json"
+            self.assertEqual(ROOT / "adapters/agy/prewalk.json", Path(os.readlink(config_link)))
+            self.assertEqual("gemini-3.8-flash-low", json.loads(config_link.read_text())["into"])
             link = home / ".local/bin/agy-prewalk"
             self.assertTrue(link.is_symlink())
             self.assertEqual(ROOT / "adapters/agy/bin/agy-prewalk", Path(os.readlink(link)))

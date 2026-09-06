@@ -54,19 +54,21 @@ adds a `prewalk` block to `~/.gemini/config/hooks.json` beside other blocks and 
 `~/.local/bin/agy-prewalk`. `claude-prewalk -- <task>` and `agy-prewalk -- <task>` run a
 strong model until its first edit, then resume the same session on a cheaper model. The
 hooks are inert unless the wrapper armed them; subagents started during phase 1 share
-the arming. Defaults for both wrappers come from flags, then
-`~/.config/prewalk/config.json` (or under `XDG_CONFIG_HOME`), then shipped values:
+the arming. Defaults for each wrapper come from flags, then that agent's own flat
+config file, then shipped values. `install claude` links `adapters/claude/prewalk.json`
+to `~/.claude/prewalk.json` (or `$CLAUDE_CONFIG_DIR/prewalk.json`) and `install agy`
+links `adapters/agy/prewalk.json` to `~/.gemini/prewalk.json`:
 
 ```json
-{
-  "claude": { "from": "fable", "into": "sonnet", "permissionMode": "acceptEdits" },
-  "agy": { "from": "claude-opus-4-6-thinking", "into": "gemini-3.8-flash-low", "mode": "accept-edits" }
-}
+{ "from": "fable", "into": "sonnet", "permissionMode": "acceptEdits" }
+{ "from": "claude-opus-4-6-thinking", "into": "gemini-3.8-flash-low", "mode": "accept-edits" }
 ```
 
-The same file carries the Pi extension's `pi` section. A missing file means shipped
-defaults; invalid JSON warns once and means shipped defaults. Specifications and plans
-are kept locally under `docs/`, which is not tracked.
+The Pi prewalk extension reads its own `~/.pi/agent/prewalk.json` (`autoArm`,
+per-provider `starts`, per-provider `targets`), hand-written in the Pi repository like
+its rules. A missing file means shipped defaults; invalid JSON warns once and means
+shipped defaults. Specifications and plans are kept locally under `docs/`, which is not
+tracked.
 
 ## Gate
 

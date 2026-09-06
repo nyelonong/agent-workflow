@@ -42,7 +42,7 @@ while [ $# -gt 0 ]; do
 done
 [ $# -gt 0 ] || usage
 task="$*"
-# Flags win over ~/.config/prewalk/config.json, which wins over shipped defaults.
+# Flags win over ~/.gemini/prewalk.json, which wins over shipped defaults.
 config_values="$(python3 "$repo_dir/scripts/prewalk_config.py" agy from into mode)" || config_values=""
 while IFS='=' read -r key value; do
   [ -n "$key" ] || continue

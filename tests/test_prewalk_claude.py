@@ -147,10 +147,10 @@ class WrapperTests(unittest.TestCase):
                 env["FAKE_CLAUDE_FAIL"] = "1"
             for key in [k for k in env if k.startswith("CLAUDE_PREWALK_")]:
                 env.pop(key)
-            env["XDG_CONFIG_HOME"] = str(Path(tmp) / "xdg")
+            env["CLAUDE_CONFIG_DIR"] = str(Path(tmp) / "claude-home")
             if config is not None:
-                (Path(tmp) / "xdg/prewalk").mkdir(parents=True)
-                (Path(tmp) / "xdg/prewalk/config.json").write_text(config)
+                (Path(tmp) / "claude-home").mkdir(parents=True)
+                (Path(tmp) / "claude-home/prewalk.json").write_text(config)
             work = Path(tmp) / "work"
             work.mkdir()
             if cwd_args:
@@ -200,7 +200,7 @@ class WrapperTests(unittest.TestCase):
         self.assertTrue(lines[1].endswith("/work"), lines[1])
 
     def test_config_file_sets_defaults_and_flags_win(self) -> None:
-        config = json.dumps({"claude": {"from": "opus", "into": "haiku", "permissionMode": "acceptEdits"}})
+        config = json.dumps({"from": "opus", "into": "haiku", "permissionMode": "acceptEdits"})
         _, lines = self.run_wrapper("edit\n", "--", "task", config=config)
         self.assertIn("--model opus", lines[0])
         self.assertIn("--permission-mode acceptEdits", lines[0])
@@ -223,32 +223,42 @@ class WrapperTests(unittest.TestCase):
 
 
 class ConfigHelperTests(unittest.TestCase):
-    def run_helper(self, xdg: Path, *keys: str) -> subprocess.CompletedProcess[str]:
+    def run_helper(self, home: Path, *keys: str, runtime: str = "claude", env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [sys.executable, str(ROOT / "scripts/prewalk_config.py"), "claude", *keys],
-            text=True, capture_output=True, env={**os.environ, "XDG_CONFIG_HOME": str(xdg)},
+            [sys.executable, str(ROOT / "scripts/prewalk_config.py"), runtime, *keys],
+            text=True, capture_output=True, env={**os.environ, "HOME": str(home), "CLAUDE_CONFIG_DIR": "", **(env or {})},
         )
 
-    def test_helper_prints_only_defined_scalar_keys(self) -> None:
+    def test_helper_reads_each_runtime_from_its_own_home_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            xdg = Path(tmp) / "xdg"
-            (xdg / "prewalk").mkdir(parents=True)
-            (xdg / "prewalk/config.json").write_text(json.dumps({"claude": {"from": "opus", "nested": {"x": 1}, "flag": True}}))
-            self.assertEqual("from=opus\nflag=true\n", self.run_helper(xdg, "from", "into", "nested", "flag").stdout)
-            self.assertEqual("", self.run_helper(xdg, "into").stdout)
+            home = Path(tmp)
+            (home / ".claude").mkdir()
+            (home / ".claude/prewalk.json").write_text(json.dumps({"from": "opus", "nested": {"x": 1}, "flag": True}))
+            self.assertEqual("from=opus\nflag=true\n", self.run_helper(home, "from", "into", "nested", "flag").stdout)
+            self.assertEqual("", self.run_helper(home, "into").stdout)
+            self.assertEqual("", self.run_helper(home, "from", runtime="agy").stdout, "agy does not read the claude file")
+            (home / ".gemini").mkdir()
+            (home / ".gemini/prewalk.json").write_text(json.dumps({"from": "gemini-3.1-pro-high"}))
+            self.assertEqual("from=gemini-3.1-pro-high\n", self.run_helper(home, "from", runtime="agy").stdout)
+            elsewhere = home / "elsewhere"
+            elsewhere.mkdir()
+            (elsewhere / "prewalk.json").write_text(json.dumps({"from": "haiku"}))
+            self.assertEqual("from=haiku\n", self.run_helper(home, "from", env={"CLAUDE_CONFIG_DIR": str(elsewhere)}).stdout, "CLAUDE_CONFIG_DIR wins for claude")
 
     def test_helper_is_silent_without_a_file_and_warns_on_invalid_json(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            xdg = Path(tmp) / "xdg"
-            absent = self.run_helper(xdg, "from")
+            home = Path(tmp)
+            absent = self.run_helper(home, "from")
             self.assertEqual((0, "", ""), (absent.returncode, absent.stdout, absent.stderr))
-            (xdg / "prewalk").mkdir(parents=True)
-            (xdg / "prewalk/config.json").write_text("{oops")
-            invalid = self.run_helper(xdg, "from")
+            (home / ".claude").mkdir()
+            (home / ".claude/prewalk.json").write_text("{oops")
+            invalid = self.run_helper(home, "from")
             self.assertEqual((0, ""), (invalid.returncode, invalid.stdout))
             self.assertIn("not valid JSON", invalid.stderr)
             usage = subprocess.run([sys.executable, str(ROOT / "scripts/prewalk_config.py"), "claude"], text=True, capture_output=True)
             self.assertEqual(64, usage.returncode)
+            unknown = subprocess.run([sys.executable, str(ROOT / "scripts/prewalk_config.py"), "codex", "from"], text=True, capture_output=True)
+            self.assertEqual(64, unknown.returncode)
 
 
 class InstallerTests(unittest.TestCase):
@@ -296,6 +306,9 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual(["Edit|Write|MultiEdit|NotebookEdit", "TodoWrite"], post_matchers)
             self.assertEqual(0o640, settings.stat().st_mode & 0o777)
 
+            config_link = home / ".claude/prewalk.json"
+            self.assertEqual(ROOT / "adapters/claude/prewalk.json", Path(os.readlink(config_link)))
+            self.assertEqual("fable", json.loads(config_link.read_text())["from"])
             link = home / ".local/bin/claude-prewalk"
             self.assertTrue(link.is_symlink())
             self.assertEqual(ROOT / "adapters/claude/bin/claude-prewalk", Path(os.readlink(link)))

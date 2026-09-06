@@ -142,7 +142,10 @@ def agy_paths(home: Path) -> list[tuple[Path, Path]]:
 
 
 def agy_links(home: Path) -> list[tuple[Path, Path]]:
-    return [(ROOT / "adapters/agy/bin/agy-prewalk", home / ".local/bin/agy-prewalk")]
+    return [
+        (ROOT / "adapters/agy/bin/agy-prewalk", home / ".local/bin/agy-prewalk"),
+        (ROOT / "adapters/agy/prewalk.json", home / ".gemini/prewalk.json"),
+    ]
 
 
 AGY_HOOKS_BLOCK = "prewalk"
@@ -316,7 +319,10 @@ def load_json(path: Path) -> dict:
 
 
 def claude_links(home: Path) -> list[tuple[Path, Path]]:
-    return [(ROOT / "adapters/claude/bin/claude-prewalk", home / ".local/bin/claude-prewalk")]
+    return [
+        (ROOT / "adapters/claude/bin/claude-prewalk", home / ".local/bin/claude-prewalk"),
+        (ROOT / "adapters/claude/prewalk.json", home / ".claude/prewalk.json"),
+    ]
 
 
 def preflight_link(source: Path, target: Path) -> None:

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Print effective prewalk defaults for a wrapper: `prewalk_config.py <runtime> <key>...`.
 
-Reads ~/.config/prewalk/config.json (or $XDG_CONFIG_HOME/prewalk/config.json).
-Prints one `key=value` line per requested key that the file defines. A missing
-file prints nothing; invalid JSON prints nothing and warns once on stderr, so
-the wrapper keeps its shipped defaults either way.
+Each runtime keeps its own flat file: `claude` reads ~/.claude/prewalk.json (or
+$CLAUDE_CONFIG_DIR/prewalk.json), `agy` reads ~/.gemini/prewalk.json. Prints one
+`key=value` line per requested key that the file defines. A missing file prints
+nothing; invalid JSON prints nothing and warns once on stderr, so the wrapper
+keeps its shipped defaults either way.
 """
 from __future__ import annotations
 
@@ -13,10 +14,17 @@ import os
 import sys
 
 
-def config_path(env: dict[str, str] | None = None) -> str:
+CONFIG_DIRS = {"claude": (".claude", "CLAUDE_CONFIG_DIR"), "agy": (".gemini", None)}
+
+
+def config_path(runtime: str, env: dict[str, str] | None = None) -> str | None:
     env = os.environ if env is None else env
-    base = env.get("XDG_CONFIG_HOME") or os.path.join(env.get("HOME", ""), ".config")
-    return os.path.join(base, "prewalk", "config.json")
+    entry = CONFIG_DIRS.get(runtime)
+    if entry is None:
+        return None
+    default_dir, override = entry
+    base = (env.get(override) if override else None) or os.path.join(env.get("HOME", ""), default_dir)
+    return os.path.join(base, "prewalk.json")
 
 
 def load(path: str) -> tuple[dict, str | None]:
@@ -39,14 +47,15 @@ def main(argv: list[str]) -> int:
         print("usage: prewalk_config.py <runtime> <key>...", file=sys.stderr)
         return 64
     runtime, keys = argv[1], argv[2:]
-    data, warning = load(config_path())
+    path = config_path(runtime)
+    if path is None:
+        print(f"prewalk_config.py: unknown runtime {runtime}", file=sys.stderr)
+        return 64
+    data, warning = load(path)
     if warning:
         print(f"prewalk: {warning}", file=sys.stderr)
-    section = data.get(runtime)
-    if not isinstance(section, dict):
-        return 0
     for key in keys:
-        value = section.get(key)
+        value = data.get(key)
         if isinstance(value, (str, int, float)) and not isinstance(value, bool):
             print(f"{key}={value}")
         elif isinstance(value, bool):
