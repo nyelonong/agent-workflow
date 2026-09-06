@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -430,12 +431,39 @@ def check_codex(home: Path) -> None:
         check_link(source, target)
 
 
+def pi_source(home: Path) -> Path:
+    return home / ".pi/agent/AGENTS.md"
+
+
+def run_render_policy(home: Path, *, check: bool) -> None:
+    source = pi_source(home)
+    if not source.is_file():
+        fail(f"Pi instructions are missing: {source}")
+    command = [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--output", str(ROOT / "policy.md")]
+    if check:
+        command.append("--check")
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.returncode != 0:
+        fail(result.stderr.strip() or "render_policy failed")
+
+
+def render_pi(home: Path) -> None:
+    run_render_policy(home, check=False)
+
+
+def check_pi(home: Path) -> None:
+    run_render_policy(home, check=True)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install the personal workflow adapters")
     parser.add_argument("--home", type=Path, default=Path.home())
-    parser.add_argument("action", choices=("install", "check"))
-    parser.add_argument("runtime", choices=("agy", "claude", "codex"))
-    return parser.parse_args()
+    parser.add_argument("action", choices=("install", "check", "render"))
+    parser.add_argument("runtime", choices=("agy", "claude", "codex", "pi"))
+    args = parser.parse_args()
+    if (args.action == "render" and args.runtime != "pi") or (args.action == "install" and args.runtime == "pi"):
+        parser.error("'render' applies to the pi runtime only; pi supports 'render' and 'check'")
+    return args
 
 
 def main() -> int:
@@ -448,6 +476,8 @@ def main() -> int:
             ("check", "claude"): check_claude,
             ("install", "codex"): install_codex,
             ("check", "codex"): check_codex,
+            ("render", "pi"): render_pi,
+            ("check", "pi"): check_pi,
         }
         actions[(args.action, args.runtime)](args.home)
     except RuntimeError as error:

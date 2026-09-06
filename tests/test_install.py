@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -172,6 +173,73 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual("before\nafter\n", agents.read_text(encoding="utf-8"))
 
 
+class RenderPolicyTests(unittest.TestCase):
+    PI_TEXT = (
+        "## Sync\n\nFirst rule line\nwraps here.\n\n<!-- pi-only:start -->\nIn Pi use `ask_decision`.\n<!-- pi-only:end -->\n\n"
+        "## Workflow\n\nSecond rule.\n\n<!-- pi-only:start -->\n## Pi ownership\n\nKeep `BASE_TOOLS` lean.\n<!-- pi-only:end -->\n"
+    )
+
+    def render(self, text: str, *args: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "AGENTS.md"
+            source.write_text(text, encoding="utf-8")
+            output = Path(tmp) / "policy.md"
+            result = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--output", str(output), *args],
+                text=True, capture_output=True,
+            )
+            result.rendered = output.read_text(encoding="utf-8") if output.exists() else None  # type: ignore[attr-defined]
+            return result
+
+    def test_render_strips_pi_only_blocks_and_unwraps_paragraphs(self) -> None:
+        result = self.render(self.PI_TEXT)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(
+            "# Personal engineering workflow\n\n## Sync\n\nFirst rule line wraps here.\n\n## Workflow\n\nSecond rule.\n",
+            result.rendered,
+        )
+
+    def test_render_refuses_unbalanced_markers(self) -> None:
+        for broken in (self.PI_TEXT.replace("<!-- pi-only:end -->\n\n## Workflow", "## Workflow", 1), "<!-- pi-only:end -->\n", "rule <!-- pi-only:start --> inline\n"):
+            result = self.render(broken)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("render_policy:", result.stderr)
+
+    def test_check_detects_stale_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "AGENTS.md"
+            source.write_text(self.PI_TEXT, encoding="utf-8")
+            output = Path(tmp) / "policy.md"
+            cmd = [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--output", str(output)]
+            self.assertNotEqual(0, subprocess.run(cmd + ["--check"], capture_output=True).returncode, "missing output is stale")
+            subprocess.run(cmd, check=True)
+            self.assertEqual(0, subprocess.run(cmd + ["--check"], capture_output=True).returncode)
+            source.write_text(self.PI_TEXT + "\nThird rule.\n", encoding="utf-8")
+            self.assertNotEqual(0, subprocess.run(cmd + ["--check"], capture_output=True).returncode)
+
+    def test_committed_policy_is_current_with_the_live_pi_file(self) -> None:
+        source = Path.home() / ".pi/agent/AGENTS.md"
+        if not source.is_file():
+            self.skipTest("Pi is not installed here")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/render_policy.py"), str(source), "--check"], text=True, capture_output=True
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
+
+class PiInstallerTests(InstallerTests):
+    def test_check_and_render_use_the_home_pi_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            missing = self.run_installer(home, "check", check=False, runtime="pi")
+            self.assertNotEqual(0, missing.returncode)
+            self.assertIn("missing", missing.stderr)
+            install = self.run_installer(home, "install", check=False, runtime="pi")
+            self.assertNotEqual(0, install.returncode, "pi has no install action")
+            render_not_pi = self.run_installer(home, "render", check=False, runtime="agy")
+            self.assertNotEqual(0, render_not_pi.returncode)
+
+
 class CodexInstallerTests(InstallerTests):
     RTK_LINE = "@/Users/zaki/.codex/RTK.md\n"
 
@@ -195,7 +263,8 @@ class CodexInstallerTests(InstallerTests):
             text = agents.read_text(encoding="utf-8")
             self.assertTrue(text.startswith(self.RTK_LINE), "the existing rtk line is preserved")
             self.assertEqual(1, text.count("<!-- personal-workflow:codex:start -->"))
-            self.assertIn("## Independent review", text, "the policy is rendered inline")
+            self.assertIn("## Workflow", text, "the policy is rendered inline")
+            self.assertIn("Fresh independent review is mandatory only when", text)
             self.assertIn("# Codex adapter", text)
             self.assertNotIn("@" + str(ROOT / "policy.md"), text, "no include directive for Codex")
             self.assertLess(len(text.encode("utf-8")), 24_576, "room under the 32 KiB instruction cap")

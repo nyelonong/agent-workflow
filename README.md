@@ -13,6 +13,21 @@ The package intentionally does not emulate Pi-only tools. Each runtime uses its 
 
 The installer manages one marked block in `~/.gemini/GEMINI.md`, the global `workflow` skill, and the `oracle` and `reviewer` agents. It removes the old marked Galdr block from `~/.gemini/AGENTS.md` while preserving unrelated content.
 
+## Pi
+
+Pi's `~/.pi/agent/AGENTS.md` is the hand-written master of the rules. Sentences that
+only mean something inside Pi sit between `<!-- pi-only:start -->` and
+`<!-- pi-only:end -->`. `policy.md` in this repository is generated from that file:
+
+```sh
+./install.sh render pi   # regenerate policy.md after editing the Pi file
+./install.sh check pi    # fails when policy.md is stale
+```
+
+Nothing writes into `~/.pi/agent`. Claude Code, Codex, and Antigravity consume the
+generated `policy.md`; re-run `install codex` after a change, since Codex holds a
+rendered copy.
+
 ## Codex
 
 ```sh
