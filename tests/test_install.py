@@ -9,6 +9,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CLAUDE_BOOTSTRAP = Path.home() / "Projects/personal/claude-config/bootstrap.sh"
 INSTALLER = ROOT / "install.sh"
 
 
@@ -21,7 +22,7 @@ class WorkflowContractTests(unittest.TestCase):
         for required in (
             "production implementation requires explicit approval",
             "clear, routine single change",
-            "exactly one architect",
+            "at most one architect",
             "one complete uncommitted review packet",
             "fresh independent review is mandatory only when",
             "application runtime behavior",
@@ -37,7 +38,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("no production code without a failing test first", lowered)
         self.assertNotIn("routing:", lowered)
 
-        self.assertIn("exactly one `architect`", workflow)
+        self.assertIn("at most one `architect`", workflow)
         self.assertIn("parent implements", workflow)
         self.assertIn("complete uncommitted review packet", workflow)
         self.assertIn("no mandatory subagent review", workflow)
@@ -51,7 +52,7 @@ class WorkflowContractTests(unittest.TestCase):
             "start any go work",
             "change only necessary code, callers, interfaces, tests, and documentation",
             "report unrelated defects",
-            "comments are rare",
+            "comments and docstrings are guilty by default",
             "async work needs an explicit owner and cancellation path",
             "do not optimize speculatively",
             "## sql and migrations",
@@ -70,7 +71,7 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertIn(required, policy)
         for pi_only in ("ask_decision", "workflowscript", "base_tools", "~/.pi/"):
             self.assertNotIn(pi_only, policy)
-        self.assertLessEqual(len(policy), 12_000)
+        self.assertLessEqual(len(policy), 13_000)
         self.assertLessEqual(len(policy.splitlines()), 200)
         self.assertIn("`go-engineering`", claude)
 
@@ -271,6 +272,10 @@ class CodexInstallerTests(InstallerTests):
     RTK_LINE = "@/Users/zaki/.codex/RTK.md\n"
 
     def seed(self, home: Path) -> Path:
+        go = home / ".pi/agent/skills/go-engineering"
+        (go / "references").mkdir(parents=True)
+        (go / "SKILL.md").write_text("---\nname: go-engineering\ndescription: Go guidance\n---\n[Concurrency](references/concurrency.md)\n")
+        (go / "references/concurrency.md").write_text("Preserve cancellation.\n")
         agents = home / ".codex/AGENTS.md"
         agents.parent.mkdir(parents=True)
         agents.write_text(self.RTK_LINE, encoding="utf-8")
@@ -303,7 +308,76 @@ class CodexInstallerTests(InstallerTests):
                 self.assertIn('sandbox_mode = "read-only"', agent.read_text())
             link = home / ".codex/skills/workflow"
             self.assertTrue(link.is_symlink())
-            self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(link)))
+            self.assertEqual(ROOT / "adapters/codex/skills/workflow", Path(os.readlink(link)))
+            for name in (
+                "shape", "plan", "implement", "investigate", "review", "verify", "finish",
+                "no-comments", "domain-language", "plan-review", "interactive-review",
+                "prepush", "resume-plan", "project", "feature-journey", "research",
+                "repo-fit", "retry", "task-boundary", "task-review", "go-engineering",
+            ):
+                self.assertTrue((home / f".codex/skills/{name}/SKILL.md").is_file(), name)
+            self.assertEqual(
+                "Preserve cancellation.\n",
+                (home / ".codex/skills/go-engineering/references/concurrency.md").read_text(),
+            )
+
+    def test_migrates_only_the_known_workflow_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self.seed(home)
+            workflow = home / ".codex/skills/workflow"
+            workflow.parent.mkdir()
+            workflow.symlink_to(ROOT / "skills/workflow")
+            unrelated = home / ".codex/config.toml"
+            unrelated.write_text('model = "existing-model"\n')
+            self.run_installer(home, runtime="codex")
+            self.assertEqual(ROOT / "adapters/codex/skills/workflow", Path(os.readlink(workflow)))
+            self.assertEqual('model = "existing-model"\n', unrelated.read_text())
+
+    def test_skill_collisions_fail_before_any_write(self) -> None:
+        for kind in ("directory", "foreign-link", "broken-link"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                agents = self.seed(home)
+                workflow = home / ".codex/skills/workflow"
+                workflow.parent.mkdir()
+                workflow.symlink_to(ROOT / "skills/workflow")
+                target = home / ".codex/skills/verify"
+                if kind == "directory":
+                    target.mkdir()
+                    (target / "SKILL.md").write_text("User skill\n")
+                else:
+                    foreign = home / "foreign"
+                    if kind == "foreign-link":
+                        foreign.mkdir()
+                    target.symlink_to(foreign)
+                before = self.snapshot(home)
+                result = self.run_installer(home, runtime="codex", check=False)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("refusing", result.stderr)
+                self.assertEqual(before, self.snapshot(home))
+                self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(workflow)))
+                self.assertEqual(self.RTK_LINE, agents.read_text())
+                self.assertFalse((home / ".codex/agents").exists())
+
+    def test_missing_go_source_fails_install_and_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self.seed(home)
+            source = home / ".pi/agent/skills/go-engineering/SKILL.md"
+            contents = source.read_text()
+            source.unlink()
+            before = self.snapshot(home)
+            result = self.run_installer(home, runtime="codex", check=False)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("missing", result.stderr)
+            self.assertEqual(before, self.snapshot(home))
+            source.write_text(contents)
+            self.run_installer(home, runtime="codex")
+            source.unlink()
+            result = self.run_installer(home, "check", runtime="codex", check=False)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("missing", result.stderr)
 
     def test_install_refuses_unmanaged_agent_file_before_any_write(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -342,6 +416,145 @@ class CodexInstallerTests(InstallerTests):
             self.assertEqual(name, data["name"])
             self.assertEqual("read-only", data["sandbox_mode"])
             self.assertIn("Do not edit, write, stage, commit", data["developer_instructions"])
+
+
+
+class OmpInstallerTests(InstallerTests):
+    def seed(self, home: Path) -> Path:
+        agents = home / ".omp/agent/AGENTS.md"
+        agents.parent.mkdir(parents=True)
+        agents.write_text("user rules\n", encoding="utf-8")
+        agents.chmod(0o640)
+        return agents
+
+    def test_install_appends_one_block_and_links_the_task_review_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = self.seed(home)
+            self.run_installer(home, runtime="omp")
+            first = self.snapshot(home)
+            self.run_installer(home, runtime="omp")
+            self.assertEqual(first, self.snapshot(home))
+            self.run_installer(home, "check", runtime="omp")
+
+            text = agents.read_text(encoding="utf-8")
+            self.assertTrue(text.startswith("user rules\n"), "existing rules are preserved")
+            self.assertEqual(1, text.count("<!-- personal-workflow:omp:start -->"))
+            self.assertIn(f"@{ROOT / 'policy.md'}", text, "the policy is imported by path")
+            self.assertIn("# omp adapter", text)
+            self.assertEqual(0o640, agents.stat().st_mode & 0o777)
+            link = home / ".agents/skills/task-review"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(ROOT / "skills/task-review", Path(os.readlink(link)))
+
+    def test_check_fails_when_the_block_or_the_link_is_stale_or_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = self.seed(home)
+            missing = self.run_installer(home, "check", check=False, runtime="omp")
+            self.assertNotEqual(0, missing.returncode)
+            self.run_installer(home, runtime="omp")
+            agents.write_text(agents.read_text(encoding="utf-8").replace("# omp adapter", "# Old adapter"))
+            stale = self.run_installer(home, "check", check=False, runtime="omp")
+            self.assertNotEqual(0, stale.returncode)
+            self.assertIn("differs", stale.stderr)
+            self.run_installer(home, runtime="omp")
+            (home / ".agents/skills/task-review").unlink()
+            unlinked = self.run_installer(home, "check", check=False, runtime="omp")
+            self.assertNotEqual(0, unlinked.returncode)
+            self.assertIn("missing or points elsewhere", unlinked.stderr)
+
+    def test_install_refuses_a_foreign_skill_link_before_any_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            agents = self.seed(home)
+            foreign = home / "elsewhere"
+            foreign.mkdir()
+            link = home / ".agents/skills/task-review"
+            link.parent.mkdir(parents=True)
+            link.symlink_to(foreign)
+
+            result = self.run_installer(home, check=False, runtime="omp")
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("refusing", result.stderr)
+            self.assertEqual("user rules\n", agents.read_text(encoding="utf-8"), "preflight runs before the block is written")
+
+
+class TaskReviewWiringTests(unittest.TestCase):
+    def run_installer(self, home: Path, runtime: str) -> subprocess.CompletedProcess[str]:
+        result = subprocess.run(
+            [str(INSTALLER), "--home", str(home), "install", runtime],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "HOME": str(home)},
+        )
+        if result.returncode != 0:
+            self.fail(f"installer failed: {result.stdout}\n{result.stderr}")
+        return result
+
+    def test_the_shared_skill_states_the_gate_contract(self) -> None:
+        skill = (ROOT / "skills/task-review/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("name: task-review", skill)
+        self.assertIn("description:", skill)
+        for required in (
+            "before any commit",
+            "Never summarize",
+            "Read-only investigation, review, and verification need no gate",
+            "request-changes",
+            "return-to-planning",
+            "cancelled",
+            "Run `verify` immediately before staging",
+            "Run `consume` after the commit lands",
+            "A correction after approval invalidates it",
+            "scripts/task_review.py",
+            "RDG_CONTROL_COMMAND",
+            # the document half of the gate, pinned so the skill cannot drift
+            # away from what the page actually does
+            "review-doc",
+            "verify-doc",
+            "consume-doc",
+            "source range",
+            "heading outline",
+        ):
+            self.assertIn(required, skill, required)
+        self.assertNotIn("rdg --review", skill, "the gate owns the reviewer invocation")
+
+    def test_the_codex_copy_names_its_own_invocation_and_decision_flow(self) -> None:
+        codex = (ROOT / "adapters/codex/skills/task-review/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("name: task-review", codex)
+        self.assertIn("$task-review", codex)
+        self.assertIn("plain numbered question", codex)
+        self.assertIn("RDG_CONTROL_COMMAND", codex)
+        self.assertNotIn("rdg --review", codex, "the gate owns the reviewer invocation")
+
+    def test_agy_codex_and_omp_install_the_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            go = home / ".pi/agent/skills/go-engineering"
+            go.mkdir(parents=True)
+            (go / "SKILL.md").write_text("---\nname: go-engineering\n---\nGo\n", encoding="utf-8")
+            for runtime in ("agy", "codex", "omp"):
+                with self.subTest(runtime=runtime):
+                    self.run_installer(home, runtime)
+            self.assertTrue((home / ".gemini/config/skills/task-review/SKILL.md").is_file())
+            self.assertEqual(
+                ROOT / "skills/task-review",
+                Path(os.readlink(home / ".agents/skills/task-review")),
+            )
+            self.assertEqual(
+                ROOT / "adapters/codex/skills/task-review",
+                Path(os.readlink(home / ".codex/skills/task-review")),
+            )
+
+    @unittest.skipUnless(CLAUDE_BOOTSTRAP.is_file(), "claude-config is not checked out here")
+    def test_claude_bootstrap_links_the_skill(self) -> None:
+        bootstrap = CLAUDE_BOOTSTRAP.read_text(encoding="utf-8")
+        self.assertIn(
+            "$agent_workflow/skills/task-review|$claude_home/skills/task-review",
+            bootstrap,
+        )
 
 
 if __name__ == "__main__":
