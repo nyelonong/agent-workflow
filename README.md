@@ -118,6 +118,21 @@ state. `verify` recomputes that fingerprint and fails if anything changed, and
 failed reviewer, a malformed result, a timeout, or a state that changed while
 the human was reviewing all yield no approval.
 
+The reviewer is a choice, not a branch: the gate speaks one protocol and either
+surface can serve it.
+
+| Reviewer | How to select it | Notes |
+| --- | --- | --- |
+| Bundled HTML page | default | no editor, no network, works anywhere |
+| RDG | `TASK_REVIEW_REVIEWER=rdg` | reviews inside a running RDG window; the repository must be open there and the root must be canonical |
+
+Both are verified working, and an approval from either is the same kind of
+approval: fingerprint-bound, single-decision, recorded in the same ledger.
+
+After editing a shared skill, run `./install.sh install-all`: some runtimes
+receive a link and one receives a copy, so installing one leaves the others
+behind. `./install.sh check-all` fails when any runtime has drifted.
+
 The reviewer is pluggable. `TASK_REVIEW_REVIEWER` selects it and defaults to
 `html`, the bundled `scripts/html_review.py`: a token-gated `http.server` on
 127.0.0.1 serving a self-contained page with line-anchored comment threads and the

@@ -551,12 +551,39 @@ def check_pi(home: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install the personal workflow adapters")
     parser.add_argument("--home", type=Path, default=Path.home())
-    parser.add_argument("action", choices=("install", "check", "render"))
-    parser.add_argument("runtime", choices=("agy", "claude", "codex", "omp", "pi"))
+    parser.add_argument("action", choices=("install", "check", "render", "install-all", "check-all"))
+    parser.add_argument("runtime", choices=("agy", "claude", "codex", "omp", "pi"), nargs="?")
     args = parser.parse_args()
+    if args.action in ("install-all", "check-all"):
+        return args
+    if args.runtime is None:
+        parser.error("a runtime is required for this action")
     if (args.action == "render" and args.runtime != "pi") or (args.action == "install" and args.runtime == "pi"):
         parser.error("'render' applies to the pi runtime only; pi supports 'render' and 'check'")
     return args
+
+
+def run_everything(home: Path, *, installing: bool) -> int:
+    """Render, install and check every runtime in one pass.
+
+    A shared skill is copied into some runtimes and linked into others, so
+    editing the source and installing only one of them leaves an agent behind.
+    This is the command that cannot be forgotten.
+    """
+    render_pi(home)
+    for install, check, name in (
+        (install_codex, check_codex, "codex"),
+        (install_claude, check_claude, "claude"),
+        (install_agy, check_agy, "agy"),
+        (install_omp, check_omp, "omp"),
+    ):
+        if installing:
+            install(home)
+        check(home)
+        print(f"{name} personal workflow: {'install' if installing else 'check'} ok")
+    check_pi(home)
+    print(f"pi personal workflow: {'render' if installing else 'check'} ok")
+    return 0
 
 
 def main() -> int:
@@ -574,6 +601,8 @@ def main() -> int:
             ("install", "omp"): install_omp,
             ("check", "omp"): check_omp,
         }
+        if args.action in ("install-all", "check-all"):
+            return run_everything(args.home, installing=args.action == "install-all")
         actions[(args.action, args.runtime)](args.home)
     except RuntimeError as error:
         print(f"install.py: {error}", file=sys.stderr)

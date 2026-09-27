@@ -559,3 +559,72 @@ class TaskReviewWiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EveryRuntimeTests(unittest.TestCase):
+    """One command for every runtime, and proof they hold the same skill."""
+
+    def run_installer(self, home: Path, *args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [str(INSTALLER), "--home", str(home), *args],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env={**os.environ, "HOME": str(home)},
+        )
+
+    def test_one_command_installs_every_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home / ".pi/agent/skills").mkdir(parents=True)
+            (home / ".pi/agent/skills/go-engineering").mkdir(parents=True)
+            (home / ".pi/agent/skills/go-engineering/SKILL.md").write_text("# go\n", encoding="utf-8")
+            (home / ".pi/agent/AGENTS.md").write_text(
+                (Path.home() / ".pi/agent/AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            result = self.run_installer(home, "install-all")
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            for runtime in ("codex", "claude", "agy", "omp"):
+                self.assertIn(f"{runtime} personal workflow: install ok", result.stdout)
+            self.assertIn("pi personal workflow: render ok", result.stdout)
+
+    def test_check_all_fails_when_a_runtime_is_behind(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            (home / ".pi/agent/skills").mkdir(parents=True)
+            (home / ".pi/agent/skills/go-engineering").mkdir(parents=True)
+            (home / ".pi/agent/skills/go-engineering/SKILL.md").write_text("# go\n", encoding="utf-8")
+            (home / ".pi/agent/AGENTS.md").write_text(
+                (Path.home() / ".pi/agent/AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            self.assertEqual(0, self.run_installer(home, "install-all").returncode)
+            stale = home / ".gemini/config/skills/task-review/SKILL.md"
+            self.assertTrue(stale.is_file(), "agy holds a copy, so it can be edited by hand")
+            stale.write_text(stale.read_text(encoding="utf-8") + "\nstale\n", encoding="utf-8")
+            result = self.run_installer(home, "check-all")
+            self.assertNotEqual(0, result.returncode, "a runtime that has drifted must fail the check")
+
+    def test_a_runtime_left_behind_by_a_shared_skill_edit_is_detectable(self) -> None:
+        # agy receives a copy rather than a link, so editing the shared skill and
+        # installing one runtime leaves another behind. Every reachable copy must
+        # therefore still hold the current text.
+        # Each runtime is compared against the source it is meant to hold: codex
+        # keeps its own copy on purpose, the rest share one file.
+        shared = (ROOT / "skills/task-review/SKILL.md").read_bytes()
+        codex_source = (ROOT / "adapters/codex/skills/task-review/SKILL.md").read_bytes()
+        copies = {
+            "agy": (Path.home() / ".gemini/config/skills/task-review/SKILL.md", shared),
+            "claude": (Path.home() / ".claude/skills/task-review/SKILL.md", shared),
+            "codex": (Path.home() / ".codex/skills/task-review/SKILL.md", codex_source),
+            "omp": (Path.home() / ".agents/skills/task-review/SKILL.md", shared),
+            "pi": (Path.home() / ".pi/agent/skills/task-review/SKILL.md", shared),
+        }
+        for runtime, (path, source) in copies.items():
+            if not path.exists():
+                continue
+            with self.subTest(runtime=runtime):
+                self.assertEqual(
+                    source, path.read_bytes(),
+                    f"{runtime} holds a stale task-review skill; run ./install.sh install-all",
+                )

@@ -36,6 +36,14 @@ Every other outcome is an error: a failed reviewer, a malformed result, a
 timeout, or a repository state that changed under the reviewer. Report it and
 stop. Never route around a failed gate.
 
+## Reviewers
+
+The gate speaks one protocol, so the surface is a choice, not a branch. It opens
+the bundled HTML page by default. `TASK_REVIEW_REVIEWER=rdg` sends the identical
+request to RDG, which reviews inside a running editor window; the repository must
+be open there and the root must be a canonical absolute path. Both are verified
+working. Choose by mood, never mid-decision: one approval, one reviewer.
+
 ## Commit
 
 - Run `verify` immediately before staging. Any change to the reviewed paths since
