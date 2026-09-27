@@ -1224,3 +1224,29 @@ class PageSurfaceTests(ReviewCase):
         for name in ("hljs", "markdownit"):
             with self.subTest(name=name):
                 self.assertNotRegex(script, r"(?:const|let|var)\s+%s\b" % name)
+
+    def test_the_page_carries_no_stray_control_characters(self) -> None:
+        # The page is a non-raw Python string, so a backslash written for the
+        # browser (\b, \s, \n inside a regex) is eaten by Python and arrives as a
+        # control character. Four separate bugs came from this; catch them all.
+        session = self.session()
+        status, body, _ = get(session.url)
+        self.assertEqual(200, status)
+        text = body.decode("utf-8")
+        strays = {
+            f"U+{ord(character):04X}"
+            for character in text
+            if ord(character) < 32 and character not in "\n\t"
+        }
+        self.assertEqual(set(), strays, "the page contains control characters from a mangled escape")
+
+    def test_the_page_declares_no_top_level_binding_twice(self) -> None:
+        # A repeated `const` is a SyntaxError that stops the whole page, and it
+        # has already happened twice here. Function names are checked above;
+        # this covers the same rule for top-level bindings.
+        script = self.page_script()
+        import re as _re
+
+        names = _re.findall(r"(?m)^(?:const|let)\s+([A-Za-z_$][\w$]*)", script)
+        duplicates = {name for name in names if names.count(name) > 1}
+        self.assertEqual(set(), duplicates, "a top-level binding is declared twice")

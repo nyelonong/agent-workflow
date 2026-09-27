@@ -97,7 +97,10 @@ FONT_FILES = {
 ASSET_VENDOR = Path(__file__).resolve().parents[1] / "assets" / "vendor"
 VENDOR_FILES = {
     "markdown-it.min.js": "text/javascript; charset=utf-8",
+    "markdown-it-task-lists.min.js": "text/javascript; charset=utf-8",
+    "markdown-it-footnote.min.js": "text/javascript; charset=utf-8",
     "highlight.min.js": "text/javascript; charset=utf-8",
+    "mermaid.min.js": "text/javascript; charset=utf-8",
 }
 
 # Inline style and script are all the page needs, and same-origin requests are
@@ -656,8 +659,13 @@ PAGE_TEMPLATE = """<!doctype html>
   color-scheme: dark;
   --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --serif:"Source Serif 4",Georgia,"Iowan Old Style","Times New Roman",serif;
-  --mono:"JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
-  --nerd:"Hack Nerd Font","FiraCode Nerd Font Propo","MesloLGS NF","JetBrains Mono",monospace;
+  /* The code font is a Nerd Font mono when the machine has one, so code and
+     file icons come from the same family. The bundled JetBrains Mono stays as
+     the fallback, which keeps the page correct on a machine with none of them. */
+  --mono:"JetBrains Mono NF","Hack Nerd Font Mono","FiraCode Nerd Font Mono",
+         "JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+  --nerd:"JetBrains Mono NF","Hack Nerd Font Mono","FiraCode Nerd Font Mono",
+         "JetBrains Mono","Nerd Font",ui-monospace,monospace;
   --bg:#0b0d12; --surface:#12151d; --raised:#181c26; --sunken:#0e1118;
   --line:#232936; --line-soft:#1b202b;
   --fg:#e7ecf4; --muted:#93a0b5; --faint:#6a7a90;
@@ -691,12 +699,13 @@ PAGE_TEMPLATE = """<!doctype html>
 html,body{height:100%}
 body{
   margin:0; background:var(--bg); color:var(--fg);
-  font:13.5px/1.5 var(--sans);
+  font:14.5px/1.5 var(--sans);
   -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   display:grid; grid-template-rows:auto auto 1fr auto; overflow:hidden;
 }
 @media (prefers-reduced-motion: reduce){*{scroll-behavior:auto !important; transition:none !important}}
-code,kbd,.mono{font-family:var(--mono); font-variant-ligatures:none; font-feature-settings:"liga" 0,"calt" 0}
+code,kbd,.mono,.rows,pre{font-family:var(--mono); font-variant-ligatures:none;
+  font-feature-settings:"liga" 0,"calt" 0,"dlig" 0}
 button{
   font:inherit; color:inherit; background:var(--raised); border:1px solid var(--line);
   border-radius:var(--r-sm); padding:6px 12px; cursor:pointer; white-space:nowrap;
@@ -727,7 +736,7 @@ header{padding:14px 18px 12px; border-bottom:1px solid var(--line); background:v
 header .top{display:flex; align-items:flex-start; gap:12px; justify-content:space-between}
 header h1{font-size:17px; line-height:1.35; font-weight:650; margin:0; letter-spacing:-.01em}
 header h1 .label{color:var(--muted); font-weight:500}
-header .meta{color:var(--muted); font-size:12px; margin-top:5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
+header .meta{color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
 header .meta code{font-size:11.5px; color:var(--faint)}
 .chips{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:9px}
 .chip{
@@ -784,8 +793,8 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
 }
 #files li:hover{background:var(--raised)}
 #files li.active{border-left-color:var(--accent); background:var(--accent-soft)}
-#files li .path{font-family:var(--mono); font-size:12px; word-break:break-all; line-height:1.35}
-#files li .counts{color:var(--muted); font-size:11px; display:flex; gap:6px; align-items:center; font-variant-numeric:tabular-nums}
+#files li .path{font-family:var(--mono); font-size:12.5px; word-break:break-all; line-height:1.35}
+#files li .counts{color:var(--muted); font-size:12px; display:flex; gap:6px; align-items:center; font-variant-numeric:tabular-nums}
 #files li .dot{width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none}
 #files li .dot.add{background:var(--add-fg)} #files li .dot.del{background:var(--del-fg)}
 #files li .open{color:var(--warn-fg); font-weight:600}
@@ -807,14 +816,14 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
 }
 .badge.add{color:var(--add-fg); border-color:var(--add-line); background:var(--add-bg)}
 .badge.del{color:var(--del-fg); border-color:var(--del-line); background:var(--del-bg)}
-.rows{font:12.5px/1.62 var(--mono); font-variant-numeric:tabular-nums}
+.rows{font:14px/1.66 var(--mono); font-variant-numeric:tabular-nums}
 .row{
   display:grid; grid-template-columns:52px 52px 18px minmax(0,1fr);
   border-left:2px solid transparent; scroll-margin-top:44px;
 }
 .row .ln{
   color:var(--faint); text-align:right; padding:0 8px; user-select:none;
-  font-size:11.5px; cursor:pointer; font-variant-numeric:tabular-nums;
+  font-size:12.5px; cursor:pointer; font-variant-numeric:tabular-nums;
 }
 .row .ln:hover{color:var(--accent)}
 .row .sign{text-align:center; user-select:none; color:var(--faint)}
@@ -838,10 +847,10 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
 .thread:hover{background:var(--raised)}
 .thread.resolved{opacity:.62; border-left-color:var(--accent)}
 .thread .where{font:11px/1.45 var(--mono); color:var(--muted); word-break:break-all}
-.thread .text{margin:5px 0 8px; white-space:pre-wrap; font-size:12.5px; line-height:1.5}
+.thread .text{margin:5px 0 8px; white-space:pre-wrap; font-size:13.5px; line-height:1.55}
 .thread .acts{display:flex; gap:6px; align-items:center}
 .group{padding:9px 12px 4px; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:600}
-.empty{padding:14px 12px; color:var(--faint); font-size:12.5px; line-height:1.5}
+.empty{padding:14px 12px; color:var(--faint); font-size:13.5px; line-height:1.55}
 
 /* -------------------------------------------------------------- composer */
 #composer{
@@ -860,8 +869,8 @@ footer{
 footer label{display:block; color:var(--muted); font-size:11px; text-transform:uppercase;
   letter-spacing:.07em; font-weight:600; margin-bottom:5px}
 footer .actions{display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end}
-#counts{color:var(--muted); font-size:12px; margin-right:6px; font-variant-numeric:tabular-nums}
-#message{grid-column:1 / -1; min-height:17px; font-size:12.5px; color:var(--muted)}
+#counts{color:var(--muted); font-size:13px; margin-right:6px; font-variant-numeric:tabular-nums}
+#message{grid-column:1 / -1; min-height:18px; font-size:13.5px; color:var(--muted)}
 #message.warn{color:var(--warn-fg)} #message.error{color:var(--danger); font-weight:600}
 kbd{
   font:10.5px/1.6 var(--mono); border:1px solid var(--line); border-bottom-width:2px;
@@ -918,13 +927,13 @@ body.document .at{
   transition:opacity .12s ease;
 }
 body.document .blk:hover .at,body.document .blk.sel .at,body.document .blk.threaded .at{opacity:1}
-body.document .blk.h1 .bd{font-family:var(--sans); font-size:24px; font-weight:700; color:var(--accent); line-height:1.28; margin:30px 0 8px; letter-spacing:-.02em}
-body.document .blk.h2 .bd{font-family:var(--sans); font-size:18px; font-weight:650; margin:28px 0 6px; letter-spacing:-.015em}
+body.document .blk.h1 .bd{font-family:var(--sans); font-size:27px; font-weight:700; color:var(--accent); line-height:1.28; margin:30px 0 8px; letter-spacing:-.02em}
+body.document .blk.h2 .bd{font-family:var(--sans); font-size:20.5px; font-weight:650; margin:28px 0 6px; letter-spacing:-.015em}
 body.document .blk.h3 .bd,body.document .blk.h4 .bd,body.document .blk.h5 .bd,body.document .blk.h6 .bd{
   font-size:14px; font-weight:700; margin:16px 0 3px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted)}
 body.document .blk.p .bd{
   margin:0 0 1.1em; color:var(--fg);
-  font-family:var(--serif); font-size:16.5px; line-height:1.75;
+  font-family:var(--serif); font-size:18px; line-height:1.72;
   font-variant-numeric:oldstyle-nums proportional-nums;
 }
 body.document .md > :first-child{margin-top:0}
@@ -934,7 +943,7 @@ body.document .md h1,body.document .md h2,body.document .md h3,
 body.document .md h4,body.document .md h5,body.document .md h6{
   font-family:var(--sans); margin:1.5em 0 .5em; line-height:1.3; letter-spacing:-.012em}
 body.document .md h1{font-size:1.6em} body.document .md h2{font-size:1.28em}
-body.document .md h3{font-size:1.1em}
+body.document .md h3{font-size:1.18em}
 body.document .md ul,body.document .md ol{margin:.4em 0 1.05em; padding-left:1.5em}
 body.document .md li{margin:.2em 0}
 body.document .md li::marker{color:var(--faint)}
@@ -945,18 +954,18 @@ body.document .md a{color:var(--accent); text-decoration-color:color-mix(in srgb
   text-underline-offset:2px}
 body.document .md strong{font-weight:650}
 body.document .md table{
-  margin:.6em 0 1.2em; border-collapse:collapse; font-family:var(--sans); font-size:13.5px; width:100%}
+  margin:.6em 0 1.2em; border-collapse:collapse; font-family:var(--sans); font-size:14.5px; width:100%}
 body.document .md th,body.document .md td{border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top}
 body.document .md th{background:var(--raised); font-weight:600; color:var(--muted)}
 body.document .md tbody tr:nth-child(even) td{background:var(--sunken)}
-body.document .md code{font-family:var(--mono); font-size:.86em; background:var(--sunken);
+body.document .md code{font-family:var(--mono); font-size:.9em; font-weight:500; background:var(--sunken);
   padding:.12em .38em; border-radius:4px; border:1px solid var(--line-soft)}
 body.document .md pre{background:var(--sunken); border:1px solid var(--line); border-radius:8px}
-body.document .md pre code{background:none; border:0; padding:0; font-size:12.5px}
+body.document .md pre code{background:none; border:0; padding:0; font-size:15px; font-weight:500; letter-spacing:0}
 body.document .blk.blank{height:10px}
 body.document .blk.rule .bd{color:var(--line); letter-spacing:.2em}
 body.document .blk.q .bd{border-left:2px solid var(--line); padding:2px 0 2px 14px; color:var(--muted); font-style:italic}
-body.document .blk.li .bd{font-family:var(--serif); font-size:16px; margin:0 0 3px; padding-left:20px; position:relative; line-height:1.6}
+body.document .blk.li .bd{font-family:var(--serif); font-size:17.5px; margin:0 0 3px; padding-left:20px; position:relative; line-height:1.6}
 body.document .blk.li .bd::before{content:"•"; position:absolute; left:2px; color:var(--faint)}
 body.document .blk.li.task .bd::before{content:"☐"; color:var(--muted)}
 body.document .blk.li.task.done .bd::before{content:"☑"; color:var(--add-fg)}
@@ -965,19 +974,24 @@ body.document .blk.tb .bd td{border:1px solid var(--line); padding:5px 9px; vert
 body.document .blk.tb .bd tr:first-child td{background:var(--raised); font-weight:600; color:var(--muted)}
 body.document .blk.tb .bd tr:nth-child(even):not(:first-child) td{background:var(--sunken)}
 body.document .blk.code{margin:0 0 16px}
-body.document .blk.code pre{margin:0; padding:10px 12px; background:var(--sunken); border:1px solid var(--line);
-  border-radius:var(--r-sm); overflow-x:auto; font:12.5px/1.6 var(--mono); white-space:pre}
+body.document .blk.code pre{margin:0; padding:12px 14px; background:var(--sunken); border:1px solid var(--line);
+  border-radius:var(--r-sm); overflow-x:auto; font:15px/1.68 var(--mono); font-weight:500;
+  letter-spacing:.005em; white-space:pre}
 body.document .blk.code .lang{display:inline-block; margin-bottom:4px; font:10px/1.6 var(--sans);
   text-transform:uppercase; letter-spacing:.08em; color:var(--faint)}
 body.document .doc code{font-family:var(--mono); font-size:.9em; background:var(--sunken); padding:1px 5px;
   border-radius:4px; color:var(--fg)}
 body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} body.document .doc s{opacity:.7}
+.diagram{margin:0 0 16px; padding:14px; background:var(--sunken); border:1px solid var(--line);
+  border-radius:8px; overflow-x:auto; text-align:center}
+.diagram.drawn svg{max-width:100%; height:auto}
+.diagram.undrawn{white-space:pre; text-align:left; font-family:var(--mono); font-size:12.5px; color:var(--muted)}
 .docpath{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:6px; word-break:break-all}
 /* the outline: every heading, with the one you are reading marked */
 #outline{padding:10px 8px 20px; border-right:1px solid var(--line); background:var(--surface); overflow:auto; min-height:0}
 #outline .group{padding:6px 8px 3px}
-#outline a{display:block; padding:3px 8px; border-radius:5px; color:var(--muted); text-decoration:none;
-  font-size:12.5px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+#outline a{display:block; padding:5px 8px; border-radius:5px; color:var(--muted); text-decoration:none;
+  font-size:13.5px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 #outline a:hover{background:var(--raised); color:var(--fg)}
 #outline a.lv1{font-weight:700; color:var(--fg)}
 #outline a.lv2{padding-left:16px} #outline a.lv3{padding-left:26px; font-size:12px}
@@ -986,7 +1000,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 /* Code tokens. One palette, for the engine the page actually uses, tuned to
    the same dark background as the diff so highlighted and plain code sit
    together without a seam. */
-.hljs-comment,.hljs-quote{color:var(--faint); font-style:italic}
+.hljs-comment,.hljs-quote{color:#8b96a8; font-style:italic}
 .hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-doctag{color:#c792ea}
 .hljs-string,.hljs-regexp,.hljs-addition{color:#a5d6a7}
 .hljs-number,.hljs-symbol,.hljs-bullet{color:#f0b072}
@@ -1093,17 +1107,27 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 <div id="overlay" hidden>Decision sent. You can close this window.</div>
 <script type="application/json" id="boot">__HTML_REVIEW_BOOT__</script>
 <script src="vendor/markdown-it.min.js"></script>
+<script src="vendor/markdown-it-task-lists.min.js"></script>
+<script src="vendor/markdown-it-footnote.min.js"></script>
 <script src="vendor/highlight.min.js"></script>
+<script src="vendor/mermaid.min.js"></script>
 <script>
-"use strict";
+"use strict";"use strict";
 const boot = JSON.parse(document.getElementById("boot").textContent);
 const el = (id) => document.getElementById(id);
 
 // markdown-it renders the inside of a block; the block boundaries and their
 // source ranges are decided server side and are never second-guessed here.
-const md = window.markdownit
-  ? window.markdownit({html: false, linkify: true, typographer: true, breaks: false})
-  : null;
+const md = (() => {
+  if (!window.markdownit) return null;
+  const engine = window.markdownit({html: false, linkify: true, typographer: true, breaks: false});
+  // Task lists and footnotes are plugins, not core: the two a specification
+  // actually uses, so the page is not quietly worse than the markdown written.
+  for (const plugin of [window.markdownitTaskLists, window.markdownitFootnote]) {
+    try { if (plugin) engine.use(plugin); } catch (error) { /* keep rendering */ }
+  }
+  return engine;
+})();
 // The vendored engines already declare their own globals, so they are read
 // through `window` and never shadowed by a `const` of the same name.
 const state = {
@@ -1366,6 +1390,7 @@ function tokenFragment(text) {
 // line. A stack handles the general case and costs nothing: the depth is zero or
 // one in practice.
 const NEWLINE = String.fromCharCode(10);
+const NEWLINE_BLANK = String.fromCharCode(10);
 
 function splitTokenHtml(html) {
   const lines = [];
@@ -1591,6 +1616,7 @@ function renderDocument() {
   renderThreads();
   renderFooter();
   markDocumentThreadedRows();
+  drawDiagrams();
 }
 
 function renderBlock(block) {
@@ -1620,20 +1646,132 @@ function renderBlock(block) {
   return node;
 }
 
+
+// Footnotes are the one construct that spans blocks: the reference sits in a
+// paragraph, the definition in another. markdown-it only renders a footnote
+// list for footnotes something referenced, so the definition text travels with
+// the reference that needs it, and the bare definitions render as nothing.
+function documentFootnotes() {
+  if (state.footnotes === undefined) {
+    const found = {};
+    for (const block of state.blocks || []) {
+      if (block.kind !== "text" || !block.source) continue;
+      const lines = block.source.split(NEWLINE);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.indexOf("[^") !== 0) continue;
+        const close = line.indexOf("]");
+        if (close < 3 || line.charAt(close + 1) !== ":") continue;
+        const id = line.slice(2, close);
+        if (found[id] !== undefined) continue;
+        const parts = [line];
+        while (i + 1 < lines.length && lines[i + 1].length && lines[i + 1].indexOf("[^") !== 0) {
+          parts.push(lines[i + 1].trim());
+          i += 1;
+        }
+        found[id] = parts.join(NEWLINE);
+      }
+    }
+    state.footnotes = found;
+  }
+  return state.footnotes;
+}
+
+function footnoteRefs(text) {
+  const ids = [];
+  let at = text.indexOf("[^");
+  while (at !== -1) {
+    const end = text.indexOf("]", at);
+    if (end === -1) break;
+    const id = text.slice(at + 2, end);
+    if (id && id.indexOf(":") === -1 && ids.indexOf(id) === -1) ids.push(id);
+    at = text.indexOf("[^", end);
+  }
+  return ids;
+}
+
+function isFootnoteDefinitionBlock(block) {
+  if (block.kind !== "text" || !block.source) return false;
+  const text = block.source.trim();
+  if (text.indexOf("[^") !== 0) return false;
+  const close = text.indexOf("]");
+  return close > 2 && text.charAt(close + 1) === ":";
+}
+
+function renderBlockMarkdown(block) {
+  const source = block.source;
+  if (isFootnoteDefinitionBlock(block)) return "";
+  const footnotes = documentFootnotes();
+  if (!Object.keys(footnotes).length) return md.render(source);
+  const refs = footnoteRefs(source).filter((id) => footnotes[id] !== undefined);
+  if (!refs.length) return md.render(source);
+  const carried = refs.map((id) => footnotes[id]).join(NEWLINE_BLANK);
+  return md.render(source + NEWLINE_BLANK + NEWLINE_BLANK + carried);
+}
+
 function blockBody(block) {
   if (block.kind === "blank") return "";
   if (block.kind === "rule") return '<hr>';
   if (block.kind === "code") return codeBlockHtml(block);
-  if (block.source !== undefined && md) {
-    // The engine gets this block's own source, so what it renders is exactly
-    // the lines the comment will name.
-    return md.render(block.source);
-  }
+  if (block.source !== undefined && md) return renderBlockMarkdown(block);
   if (block.kind === "table") return tableHtml(block);
   return block.html.replace(/\\n/g, "<br>");
 }
 
 // The block's source still carries its fence lines; the body is between them.
+let mermaidReady = false;
+let mermaidId = 0;
+
+const DIAGRAM_KEYWORDS = ["graph", "flowchart", "sequenceDiagram", "classDiagram",
+  "stateDiagram", "stateDiagram-v2", "erDiagram", "journey", "gantt", "pie",
+  "gitGraph", "mindmap", "timeline", "quadrantChart", "requirementDiagram", "C4Context"];
+
+function prepareMermaid() {
+  if (mermaidReady || !window.mermaid) return mermaidReady;
+  try {
+    window.mermaid.initialize({
+      startOnLoad: false, securityLevel: "strict", theme: "dark",
+      themeVariables: { fontFamily: "Inter, sans-serif", primaryColor: "#1a1e28",
+        primaryTextColor: "#e7ecf4", primaryBorderColor: "#3a4256", lineColor: "#8b95a5",
+        textColor: "#c9d3e0" },
+      flowchart: { htmlLabels: false },
+    });
+  } catch (error) { return false; }
+  mermaidReady = true;
+  return true;
+}
+
+// Mermaid only draws what it recognises. No regex: the page lives inside a
+// non-raw Python string, where a backslash written for the browser arrives as
+// a control character.
+function isDiagramSource(source) {
+  const body = String(source || "").trim();
+  if (!body) return false;
+  const first = body.split(NEWLINE)[0].trim();
+  return DIAGRAM_KEYWORDS.some((word) => {
+    if (first === word) return true;
+    for (const tail of [" ", "/", "{", ":"]) {
+      if (first.indexOf(word + tail) === 0) return true;
+    }
+    return false;
+  });
+}
+
+async function drawDiagrams() {
+  if (!prepareMermaid()) return;
+  const nodes = [...document.querySelectorAll(".diagram")];
+  for (const node of nodes) {
+    const source = node.textContent;
+    try {
+      const drawn = await window.mermaid.render("m" + node.dataset.mermaid, source);
+      node.innerHTML = drawn.svg;
+      node.classList.add("drawn");
+    } catch (error) {
+      node.classList.add("undrawn");
+    }
+  }
+}
+
 function fenceBody(block) {
   const lines = (block.source || "").split("\\n");
   if (!lines.length) return "";
@@ -1651,6 +1789,9 @@ function fenceBody(block) {
 function codeBlockHtml(block) {
   const body = fenceBody(block);
   const language = (block.language || "").toLowerCase();
+  if (language === "mermaid" && isDiagramSource(body)) {
+    return '<div class="diagram" data-mermaid="' + mermaidId++ + '">' + escapeHtml(body) + "</div>";
+  }
   let code = escapeHtml(body);
   const engine = window.hljs;
   if (engine && language && language !== "text" && engine.getLanguage(language)) {
