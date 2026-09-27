@@ -38,6 +38,10 @@ def managed_block() -> str:
 def codex_block() -> str:
     # Codex documents no include directive, so the policy is rendered inline.
     policy = (ROOT / "policy.md").read_text(encoding="utf-8").strip()
+    policy = policy.replace(
+        "start it on the stronger model and let prewalk hand off after the first edit.",
+        "use the current model without an automatic handoff.",
+    )
     adapter = (ROOT / "adapters/codex/AGENTS.md").read_text(encoding="utf-8").strip()
     return f"{CODEX_START}\n{policy}\n\n{adapter}\n{CODEX_END}"
 
@@ -136,6 +140,7 @@ def check_directory(source: Path, target: Path) -> None:
 def agy_paths(home: Path) -> list[tuple[Path, Path]]:
     return [
         (ROOT / "skills/workflow", home / ".gemini/config/skills/workflow"),
+        (ROOT / "skills/task-review", home / ".gemini/config/skills/task-review"),
         (ROOT / "adapters/agy/agents/architect", home / ".gemini/config/agents/architect"),
         (ROOT / "adapters/agy/agents/reviewer", home / ".gemini/config/agents/reviewer"),
     ]
@@ -227,6 +232,49 @@ def check_agy(home: Path) -> None:
         check_directory(source, target)
     check_agy_hooks(home)
     for source, target in agy_links(home):
+        check_link(source, target)
+
+
+OMP_START = "<!-- personal-workflow:omp:start -->"
+OMP_END = "<!-- personal-workflow:omp:end -->"
+
+
+def omp_path(home: Path) -> Path:
+    return home / ".omp/agent/AGENTS.md"
+
+
+def omp_block() -> str:
+    adapter = (ROOT / "adapters/omp/AGENTS.md").read_text(encoding="utf-8").strip()
+    return f"{OMP_START}\n@{ROOT / 'policy.md'}\n\n{adapter}\n{OMP_END}"
+
+
+def omp_links(home: Path) -> list[tuple[Path, Path]]:
+    return [(ROOT / "skills/task-review", home / ".agents/skills/task-review")]
+
+
+def install_omp(home: Path) -> None:
+    agents_path = omp_path(home)
+    existing = agents_path.read_text(encoding="utf-8") if agents_path.exists() else ""
+    rendered = replace_marked_block(existing, omp_block(), start=OMP_START, end=OMP_END, label="~/.omp/agent/AGENTS.md")
+    for source, target in omp_links(home):
+        preflight_link(source, target)
+
+    if rendered != existing:
+        atomic_write(agents_path, rendered)
+    for source, target in omp_links(home):
+        install_link(source, target)
+
+
+def check_omp(home: Path) -> None:
+    agents_path = omp_path(home)
+    if not agents_path.is_file():
+        fail(f"managed file is missing: {agents_path}")
+    text = agents_path.read_text(encoding="utf-8")
+    if replace_marked_block(text, omp_block(), start=OMP_START, end=OMP_END, label="~/.omp/agent/AGENTS.md") != text:
+        fail(f"managed block differs from source: {agents_path}")
+    for source, target in omp_links(home):
+        if not (source / "SKILL.md").is_file():
+            fail(f"skill source is missing: {source / 'SKILL.md'}")
         check_link(source, target)
 
 
@@ -379,7 +427,42 @@ def codex_agent_files(home: Path) -> list[tuple[Path, Path]]:
 
 
 def codex_links(home: Path) -> list[tuple[Path, Path]]:
-    return [(ROOT / "skills/workflow", home / ".codex/skills/workflow")]
+    names = (
+        "workflow", "shape", "plan", "implement", "investigate", "review", "verify", "finish",
+        "no-comments", "domain-language", "plan-review", "interactive-review", "prepush",
+        "resume-plan", "project", "feature-journey", "research", "repo-fit", "retry", "task-boundary",
+        "task-review",
+    )
+    return [
+        (ROOT / "adapters/codex/skills" / name, home / ".codex/skills" / name)
+        for name in names
+    ] + [(home / ".pi/agent/skills/go-engineering", home / ".codex/skills/go-engineering")]
+
+
+def legacy_codex_workflow(source: Path, target: Path) -> bool:
+    return (
+        source == ROOT / "adapters/codex/skills/workflow"
+        and target.is_symlink()
+        and Path(os.readlink(target)) == ROOT / "skills/workflow"
+    )
+
+
+def preflight_codex_skill(source: Path, target: Path) -> None:
+    if not (source / "SKILL.md").is_file():
+        fail(f"skill source is missing: {source / 'SKILL.md'}")
+    if not legacy_codex_workflow(source, target):
+        preflight_link(source, target)
+
+
+def install_codex_skill(source: Path, target: Path) -> None:
+    preflight_codex_skill(source, target)
+    if legacy_codex_workflow(source, target):
+        with tempfile.TemporaryDirectory(dir=target.parent) as tmp:
+            replacement = Path(tmp) / "workflow"
+            replacement.symlink_to(source)
+            os.replace(replacement, target)
+    else:
+        install_link(source, target)
 
 
 def preflight_managed_file(target: Path) -> None:
@@ -414,14 +497,14 @@ def install_codex(home: Path) -> None:
     for _, target in codex_agent_files(home):
         preflight_managed_file(target)
     for source, target in codex_links(home):
-        preflight_link(source, target)
+        preflight_codex_skill(source, target)
 
     if rendered != existing:
         atomic_write(agents_path, rendered)
     for source, target in codex_agent_files(home):
         install_managed_file(source, target)
     for source, target in codex_links(home):
-        install_link(source, target)
+        install_codex_skill(source, target)
 
 
 def check_codex(home: Path) -> None:
@@ -436,6 +519,8 @@ def check_codex(home: Path) -> None:
     for source, target in codex_agent_files(home):
         check_managed_file(source, target)
     for source, target in codex_links(home):
+        if not (source / "SKILL.md").is_file():
+            fail(f"skill source is missing: {source / 'SKILL.md'}")
         check_link(source, target)
 
 
@@ -467,7 +552,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install the personal workflow adapters")
     parser.add_argument("--home", type=Path, default=Path.home())
     parser.add_argument("action", choices=("install", "check", "render"))
-    parser.add_argument("runtime", choices=("agy", "claude", "codex", "pi"))
+    parser.add_argument("runtime", choices=("agy", "claude", "codex", "omp", "pi"))
     args = parser.parse_args()
     if (args.action == "render" and args.runtime != "pi") or (args.action == "install" and args.runtime == "pi"):
         parser.error("'render' applies to the pi runtime only; pi supports 'render' and 'check'")
@@ -486,6 +571,8 @@ def main() -> int:
             ("check", "codex"): check_codex,
             ("render", "pi"): render_pi,
             ("check", "pi"): check_pi,
+            ("install", "omp"): install_omp,
+            ("check", "omp"): check_omp,
         }
         actions[(args.action, args.runtime)](args.home)
     except RuntimeError as error:

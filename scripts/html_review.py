@@ -662,9 +662,9 @@ PAGE_TEMPLATE = """<!doctype html>
   /* The code font is a Nerd Font mono when the machine has one, so code and
      file icons come from the same family. The bundled JetBrains Mono stays as
      the fallback, which keeps the page correct on a machine with none of them. */
-  --mono:"JetBrains Mono NF","Hack Nerd Font Mono","FiraCode Nerd Font Mono",
+  --mono:"FiraCode Nerd Font Mono","JetBrains Mono NF","Hack Nerd Font Mono",
          "JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
-  --nerd:"JetBrains Mono NF","Hack Nerd Font Mono","FiraCode Nerd Font Mono",
+  --nerd:"FiraCode Nerd Font Mono","JetBrains Mono NF","Hack Nerd Font Mono",
          "JetBrains Mono","Nerd Font",ui-monospace,monospace;
   --bg:#0b0d12; --surface:#12151d; --raised:#181c26; --sunken:#0e1118;
   --line:#232936; --line-soft:#1b202b;
@@ -704,8 +704,11 @@ body{
   display:grid; grid-template-rows:auto auto 1fr auto; overflow:hidden;
 }
 @media (prefers-reduced-motion: reduce){*{scroll-behavior:auto !important; transition:none !important}}
-code,kbd,.mono,.rows,pre{font-family:var(--mono); font-variant-ligatures:none;
+code,kbd,.mono,.rows{font-family:var(--mono); font-variant-ligatures:none;
   font-feature-settings:"liga" 0,"calt" 0,"dlig" 0}
+/* In prose a snippet is read, not compared, so its ligatures are welcome. */
+body.document .md code,body.document .blk.code pre code{
+  font-variant-ligatures:normal; font-feature-settings:"liga" 1,"calt" 1}
 button{
   font:inherit; color:inherit; background:var(--raised); border:1px solid var(--line);
   border-radius:var(--r-sm); padding:6px 12px; cursor:pointer; white-space:nowrap;
