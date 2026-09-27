@@ -52,7 +52,6 @@ _SCRIPTS = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
-import highlight  # noqa: E402  (code tokenizing, beside this script)
 import markdown_doc  # noqa: E402  (line-oriented rendering, beside this script)
 import task_review  # noqa: E402  (the client lives beside this script and is not a package)
 
@@ -89,6 +88,16 @@ ASSET_FONTS = Path(__file__).resolve().parents[1] / "assets" / "fonts"
 FONT_FILES = {
     "jetbrains-mono-400.woff2": ASSET_FONTS / "jetbrains-mono-400.woff2",
     "jetbrains-mono-700.woff2": ASSET_FONTS / "jetbrains-mono-700.woff2",
+    "inter-latin-var.woff2": ASSET_FONTS / "inter-latin-var.woff2",
+    "source-serif-4-latin-var.woff2": ASSET_FONTS / "source-serif-4-latin-var.woff2",
+}
+
+# Third-party code is vendored, never fetched: the page must work with no
+# network, and its policy may keep naming no origin but this one.
+ASSET_VENDOR = Path(__file__).resolve().parents[1] / "assets" / "vendor"
+VENDOR_FILES = {
+    "markdown-it.min.js": "text/javascript; charset=utf-8",
+    "highlight.min.js": "text/javascript; charset=utf-8",
 }
 
 # Inline style and script are all the page needs, and same-origin requests are
@@ -96,7 +105,9 @@ FONT_FILES = {
 # reports a closed window, and the bundled code font. Everything else -- images,
 # other origins, frames -- stays denied.
 CONTENT_SECURITY_POLICY = (
-    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
+    # One directive per name: a repeated script-src silently replaces the first,
+    # which would block the page's own inline script.
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
     "connect-src 'self'; font-src 'self'"
 )
 SECURITY_HEADERS = (
@@ -188,9 +199,11 @@ class FileDiff:
     added: int
     removed: int
     lines: tuple[DiffLine, ...]
+    text: "str | None" = None
+    language: "str | None" = None
 
     def payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "repository": self.repository,
             "path": self.path,
             "old_path": self.old_path,
@@ -200,6 +213,11 @@ class FileDiff:
             "removed": self.removed,
             "lines": [line.payload() for line in self.lines],
         }
+        if self.language:
+            payload["language"] = self.language
+        if self.text is not None:
+            payload["text"] = self.text
+        return payload
 
 
 def parse_patch(patch: bytes) -> "tuple[list[DiffLine], int, int, bool]":
@@ -262,6 +280,51 @@ def status_for(entry: task_review.StatusEntry) -> str:
     return "modified"
 
 
+MAX_HIGHLIGHT_BYTES = 400_000
+
+LANGUAGE_ALIASES = {
+    "py": "python", "pyi": "python", "js": "javascript", "mjs": "javascript",
+    "cjs": "javascript", "jsx": "javascript", "ts": "typescript", "tsx": "typescript",
+    "rs": "rust", "go": "go", "yml": "yaml", "sh": "bash", "bash": "bash",
+    "zsh": "bash", "md": "markdown", "markdown": "markdown", "html": "xml",
+    "htm": "xml", "vue": "xml", "rb": "ruby", "pl": "perl", "cs": "csharp",
+    "kt": "kotlin", "swift": "swift", "scala": "scala", "lua": "lua",
+}
+
+
+def language_for(path: str) -> "str | None":
+    """The language hint for a path, or None when we should not guess."""
+    name = path.split("/")[-1].lower()
+    if name in ("makefile", "dockerfile", "gemfile", "rakefile"):
+        return {"makefile": "makefile", "dockerfile": "dockerfile", "gemfile": "ruby", "rakefile": "ruby"}[name]
+    dot = name.rfind(".")
+    if dot <= 0:
+        return None
+    return LANGUAGE_ALIASES.get(name[dot + 1 :])
+
+
+def read_for_highlighting(root: str, path: str, binary: bool) -> "str | None":
+    """The new-side file text, so a reviewer can tokenize whole files.
+
+    A removed line has no pre-image on disk, so the page tokenizes those as
+    fragments; added and context lines get the real thing. A file too large to
+    be worth sending is simply not highlighted.
+    """
+    if binary:
+        return None
+    absolute = os.path.join(root, *path.split("/"))
+    try:
+        if os.path.getsize(absolute) > MAX_HIGHLIGHT_BYTES:
+            return None
+        with open(absolute, "rb") as handle:
+            raw = handle.read()
+    except OSError:
+        return None
+    if b"\x00" in raw:
+        return None
+    return raw.decode("utf-8", "replace")
+
+
 def collect_file_diffs(
     repository: task_review.Repository,
     git: GitRunner = task_review.run_git,
@@ -287,6 +350,8 @@ def collect_file_diffs(
                 added=added,
                 removed=removed,
                 lines=tuple(lines),
+                text=read_for_highlighting(root, entry.path, binary),
+                language=language_for(entry.path),
             )
         )
     return diffs
@@ -363,7 +428,7 @@ def build_document_payload(request: task_review.DocumentRequest) -> dict[str, An
         raise task_review.DocumentError(f"the document could not be read: {error}") from None
     # The page renders blocks; the ranges they carry are what a comment names,
     # so the two must come from the same grouping pass.
-    grouped = tokenize_code_blocks(markdown_doc.blocks(text))
+    grouped = mark_fence_languages(markdown_doc.blocks(text))
     return {
         "version": PROTOCOL_VERSION,
         "review_id": request.review_id,
@@ -376,35 +441,18 @@ def build_document_payload(request: task_review.DocumentRequest) -> dict[str, An
     }
 
 
-def tokenize_code_blocks(blocks: "list[dict[str, Any]]") -> "list[dict[str, Any]]":
-    """Replace each fenced code block's body with tokenized markup.
+def mark_fence_languages(blocks: "list[dict[str, Any]]") -> "list[dict[str, Any]]":
+    """Record each fenced block's language, from its opening fence.
 
-    A block's html is escaped source, which a tokenizer cannot read. The raw
-    text is on the block, the fence lines are stripped, and an unknown language
-    leaves the block exactly as it was rather than guessing.
+    The page does the tokenizing, with a real grammar engine; all the server
+    owes it is which language a fence claims, so the badge and the engine agree.
     """
     for block in blocks:
         if block.get("kind") != "code" or "source" not in block:
             continue
-        lines = block["source"].split("\n")
-        if not lines:
-            continue
-        opening = lines[0].strip()
-        if not opening.startswith("`") and not opening.startswith("~"):
-            block["html"] = highlight.highlight("", "\n".join(lines))
-            continue
-        marker = opening[0]
-        fence = 0
-        while fence < len(opening) and opening[fence] == marker:
-            fence += 1
-        language = opening[fence:].strip()
-        body = lines[1:]
-        while body and not body[-1].strip().startswith(marker * fence):
-            body.pop()
-        if body:
-            body.pop()
-        block["language"] = language.split()[0] if language.split() else ""
-        block["html"] = highlight.highlight(block["language"], "\n".join(body))
+        opening = block["source"].split("\n")[0].strip()
+        info = opening.lstrip("`~").strip()
+        block["language"] = info.split()[0] if info.split() else ""
     return blocks
 
 
@@ -606,7 +654,8 @@ PAGE_TEMPLATE = """<!doctype html>
 <style>
 :root{
   color-scheme: dark;
-  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --serif:"Source Serif 4",Georgia,"Iowan Old Style","Times New Roman",serif;
   --mono:"JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
   --nerd:"Hack Nerd Font","FiraCode Nerd Font Propo","MesloLGS NF","JetBrains Mono",monospace;
   --bg:#0b0d12; --surface:#12151d; --raised:#181c26; --sunken:#0e1118;
@@ -629,6 +678,14 @@ PAGE_TEMPLATE = """<!doctype html>
 @font-face{
   font-family:"JetBrains Mono"; src:url("font/jetbrains-mono-700.woff2") format("woff2");
   font-weight:700; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:"Inter"; src:url("font/inter-latin-var.woff2") format("woff2");
+  font-weight:100 900; font-style:normal; font-display:swap;
+}
+@font-face{
+  font-family:"Source Serif 4"; src:url("font/source-serif-4-latin-var.woff2") format("woff2");
+  font-weight:200 900; font-style:normal; font-display:swap;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -861,15 +918,45 @@ body.document .at{
   transition:opacity .12s ease;
 }
 body.document .blk:hover .at,body.document .blk.sel .at,body.document .blk.threaded .at{opacity:1}
-body.document .blk.h1 .bd{font-size:21px; font-weight:700; color:var(--accent); line-height:1.35; margin:22px 0 4px}
-body.document .blk.h2 .bd{font-size:16.5px; font-weight:700; margin:20px 0 4px; letter-spacing:-.01em}
+body.document .blk.h1 .bd{font-family:var(--sans); font-size:24px; font-weight:700; color:var(--accent); line-height:1.28; margin:30px 0 8px; letter-spacing:-.02em}
+body.document .blk.h2 .bd{font-family:var(--sans); font-size:18px; font-weight:650; margin:28px 0 6px; letter-spacing:-.015em}
 body.document .blk.h3 .bd,body.document .blk.h4 .bd,body.document .blk.h5 .bd,body.document .blk.h6 .bd{
   font-size:14px; font-weight:700; margin:16px 0 3px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted)}
-body.document .blk.p .bd{margin:0 0 14px; line-height:1.72; color:var(--fg)}
+body.document .blk.p .bd{
+  margin:0 0 1.1em; color:var(--fg);
+  font-family:var(--serif); font-size:16.5px; line-height:1.75;
+  font-variant-numeric:oldstyle-nums proportional-nums;
+}
+body.document .md > :first-child{margin-top:0}
+body.document .md > :last-child{margin-bottom:0}
+body.document .md p{margin:0 0 1.05em}
+body.document .md h1,body.document .md h2,body.document .md h3,
+body.document .md h4,body.document .md h5,body.document .md h6{
+  font-family:var(--sans); margin:1.5em 0 .5em; line-height:1.3; letter-spacing:-.012em}
+body.document .md h1{font-size:1.6em} body.document .md h2{font-size:1.28em}
+body.document .md h3{font-size:1.1em}
+body.document .md ul,body.document .md ol{margin:.4em 0 1.05em; padding-left:1.5em}
+body.document .md li{margin:.2em 0}
+body.document .md li::marker{color:var(--faint)}
+body.document .md blockquote{
+  margin:.8em 0; padding:.2em 0 .2em 1.1em; border-left:2px solid var(--line); color:var(--muted)}
+body.document .md hr{border:0; border-top:1px solid var(--line); margin:1.6em 0}
+body.document .md a{color:var(--accent); text-decoration-color:color-mix(in srgb,var(--accent) 45%,transparent);
+  text-underline-offset:2px}
+body.document .md strong{font-weight:650}
+body.document .md table{
+  margin:.6em 0 1.2em; border-collapse:collapse; font-family:var(--sans); font-size:13.5px; width:100%}
+body.document .md th,body.document .md td{border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top}
+body.document .md th{background:var(--raised); font-weight:600; color:var(--muted)}
+body.document .md tbody tr:nth-child(even) td{background:var(--sunken)}
+body.document .md code{font-family:var(--mono); font-size:.86em; background:var(--sunken);
+  padding:.12em .38em; border-radius:4px; border:1px solid var(--line-soft)}
+body.document .md pre{background:var(--sunken); border:1px solid var(--line); border-radius:8px}
+body.document .md pre code{background:none; border:0; padding:0; font-size:12.5px}
 body.document .blk.blank{height:10px}
 body.document .blk.rule .bd{color:var(--line); letter-spacing:.2em}
 body.document .blk.q .bd{border-left:2px solid var(--line); padding:2px 0 2px 14px; color:var(--muted); font-style:italic}
-body.document .blk.li .bd{margin:0 0 2px; padding-left:18px; position:relative}
+body.document .blk.li .bd{font-family:var(--serif); font-size:16px; margin:0 0 3px; padding-left:20px; position:relative; line-height:1.6}
 body.document .blk.li .bd::before{content:"•"; position:absolute; left:2px; color:var(--faint)}
 body.document .blk.li.task .bd::before{content:"☐"; color:var(--muted)}
 body.document .blk.li.task.done .bd::before{content:"☑"; color:var(--add-fg)}
@@ -896,9 +983,20 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 #outline a.lv2{padding-left:16px} #outline a.lv3{padding-left:26px; font-size:12px}
 #outline a.lv4,#outline a.lv5,#outline a.lv6{padding-left:36px; font-size:11.5px; color:var(--faint)}
 #outline a.here{background:var(--accent-soft); color:var(--accent)}
-/* tokens, from the server-side tokenizer */
-.tok-com{color:var(--faint); font-style:italic} .tok-str{color:#a5d6a7} .tok-num{color:#f0b072}
-.tok-kw{color:#c792ea} .tok-bi{color:#82aaff}
+/* Code tokens. One palette, for the engine the page actually uses, tuned to
+   the same dark background as the diff so highlighted and plain code sit
+   together without a seam. */
+.hljs-comment,.hljs-quote{color:var(--faint); font-style:italic}
+.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-doctag{color:#c792ea}
+.hljs-string,.hljs-regexp,.hljs-addition{color:#a5d6a7}
+.hljs-number,.hljs-symbol,.hljs-bullet{color:#f0b072}
+.hljs-title,.hljs-title.class_,.hljs-title.function_,.hljs-section{color:#82aaff}
+.hljs-type,.hljs-class .hljs-title,.hljs-built_in,.hljs-params{color:#ffcb6b}
+.hljs-variable,.hljs-template-variable,.hljs-attribute,.hljs-attr,.hljs-property{color:#e6edf3}
+.hljs-meta,.hljs-punctuation,.hljs-operator{color:#9aa7bd}
+.hljs-name,.hljs-tag{color:#ff7b72}
+.hljs-emphasis{font-style:italic} .hljs-strong{font-weight:600}
+.hljs-link{text-decoration:underline}
 [hidden]{display:none !important}
 </style>
 </head>
@@ -994,10 +1092,20 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 </div>
 <div id="overlay" hidden>Decision sent. You can close this window.</div>
 <script type="application/json" id="boot">__HTML_REVIEW_BOOT__</script>
+<script src="vendor/markdown-it.min.js"></script>
+<script src="vendor/highlight.min.js"></script>
 <script>
 "use strict";
 const boot = JSON.parse(document.getElementById("boot").textContent);
 const el = (id) => document.getElementById(id);
+
+// markdown-it renders the inside of a block; the block boundaries and their
+// source ranges are decided server side and are never second-guessed here.
+const md = window.markdownit
+  ? window.markdownit({html: false, linkify: true, typographer: true, breaks: false})
+  : null;
+// The vendored engines already declare their own globals, so they are read
+// through `window` and never shadowed by a `const` of the same name.
 const state = {
   data: null,
   files: [],
@@ -1151,6 +1259,9 @@ function render() {
         repository: file.repository, path: file.path, old_path: file.old_path,
         status: file.status, binary: file.binary, added: file.added,
         removed: file.removed, lines: file.lines,
+        // language and text drive diff highlighting; without them every row
+        // falls back to plain text even though the payload carried them.
+        language: file.language, text: file.text,
       });
     }
   }
@@ -1220,6 +1331,99 @@ function renderFiles() {
   });
 }
 
+// ---------------------------------------------------------------- diff tokens
+//
+// A diff shows fragments of a file, so tokenizing each row on its own gets
+// multi-line strings and block comments wrong. Instead the whole new-side file
+// is tokenized once and the resulting markup is split per line, re-opening any
+// span that continues onto the next line. Removed lines have no pre-image on
+// disk, so those are tokenized as fragments and may be approximate.
+
+const tokenCache = new Map();
+
+function tokenLines(file) {
+  if (tokenCache.has(file.path)) return tokenCache.get(file.path);
+  let perLine = null;
+  const engine = window.hljs;
+  if (engine && file.language && file.text !== undefined && engine.getLanguage(file.language)) {
+    try {
+      const whole = engine.highlight(file.text, {language: file.language, ignoreIllegals: true}).value;
+      perLine = splitTokenHtml(whole);
+    } catch (error) { perLine = null; }
+  }
+  tokenCache.set(file.path, perLine);
+  return perLine;
+}
+
+function tokenFragment(text) {
+  const engine = window.hljs;
+  if (!engine) return null;
+  return escapeHtml(text);
+}
+
+// highlight.js emits a flat run of spans and keeps the file's real newlines, so
+// a line boundary closes whatever is still open and re-opens it on the next
+// line. A stack handles the general case and costs nothing: the depth is zero or
+// one in practice.
+const NEWLINE = String.fromCharCode(10);
+
+function splitTokenHtml(html) {
+  const lines = [];
+  const stack = [];
+  const openTags = () => stack.map((name) => '<span class="' + name + '">').join("");
+  const closeTags = () => "</span>".repeat(stack.length);
+  let buffer = "";
+  const endLine = () => {
+    lines.push(buffer + closeTags());
+    buffer = openTags();
+  };
+  let index = 0;
+  while (index < html.length) {
+    const next = html.indexOf("<", index);
+    if (next === -1) {
+      const rest = html.slice(index);
+      const pieces = rest.split(NEWLINE);
+      for (let i = 0; i < pieces.length; i++) {
+        buffer += pieces[i];
+        if (i < pieces.length - 1) endLine();
+      }
+      break;
+    }
+    // Plain text before the next tag may itself contain a line break.
+    const text = html.slice(index, next);
+    const pieces = text.split(NEWLINE);
+    for (let i = 0; i < pieces.length; i++) {
+      buffer += pieces[i];
+      if (i < pieces.length - 1) endLine();
+    }
+    const end = html.indexOf(">", next);
+    if (end === -1) { buffer += html.slice(next); break; }
+    const tag = html.slice(next, end + 1);
+    if (tag.charAt(1) === "/") {
+      stack.pop();
+      buffer += tag;
+    } else if (tag === "<br>" || tag === "<br/>" || tag === "<br />") {
+      endLine();
+    } else {
+      const match = /class="([^"]*)"/.exec(tag);
+      stack.push(match ? match[1] : "");
+      buffer += tag;
+    }
+    index = end + 1;
+  }
+  lines.push(buffer + closeTags());
+  return lines;
+}
+
+function lineTokens(file, line, side) {
+  const perLine = tokenLines(file);
+  if (perLine && line && line > 0) {
+    const index = side === "old" ? line - 1 : line - 1;
+    if (index < perLine.length) return perLine[index];
+  }
+  return null;
+}
+
 function makeRow(fileIndex, line, index) {
   const row = document.createElement("div");
   row.className = "row " + line.type;
@@ -1238,7 +1442,14 @@ function makeRow(fileIndex, line, index) {
   sign.textContent = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
   const code = document.createElement("span");
   code.className = "code";
-  code.textContent = line.text === "" ? " " : line.text;
+  const file = state.files[fileIndex];
+  const tokens = file ? lineTokens(file, sideNumber(line, line.type === "remove" ? "old" : "new"),
+                                     line.type === "remove" ? "old" : "new") : null;
+  if (tokens !== null && tokens !== undefined) {
+    code.innerHTML = tokens === "" ? " " : tokens;
+  } else {
+    code.textContent = line.text === "" ? " " : line.text;
+  }
   row.append(oldNumber, newNumber, sign, code);
   if (line.type === "context" || line.type === "add" || line.type === "remove") {
     row.addEventListener("mousedown", (event) => onRowPress(event, fileIndex, index, line));
@@ -1398,7 +1609,9 @@ function renderBlock(block) {
   anchor.textContent = String(block.start);
   anchor.title = "lines " + block.start + "-" + block.end;
   const body = document.createElement("div");
-  body.className = "bd";
+  // The markdown class is what the document typography hangs off: every rule
+  // for prose, tables and lists is scoped to it, not to the block shell.
+  body.className = block.kind === "code" || block.kind === "blank" || block.kind === "rule" ? "bd" : "bd md";
   body.innerHTML = blockBody(block);
   node.append(anchor, body);
   if (block.kind !== "blank" && block.kind !== "rule") {
@@ -1408,17 +1621,48 @@ function renderBlock(block) {
 }
 
 function blockBody(block) {
-  if (block.kind === "blank" || block.kind === "rule") return "";
-  if (block.kind === "code") {
-    // The server already tokenized this, so the markup is trusted; the
-    // language badge says what the tokens mean, and "text" means no guessing.
-    const label = block.language && block.language !== "text" ? block.language : "";
-    return (label ? '<span class="lang">' + label + "</span>" : "") + "<pre>" + block.html + "</pre>";
+  if (block.kind === "blank") return "";
+  if (block.kind === "rule") return '<hr>';
+  if (block.kind === "code") return codeBlockHtml(block);
+  if (block.source !== undefined && md) {
+    // The engine gets this block's own source, so what it renders is exactly
+    // the lines the comment will name.
+    return md.render(block.source);
   }
   if (block.kind === "table") return tableHtml(block);
-  // Everything else is already escaped by the server-side renderer; the
-  // tokenizer, when a language is known, has already wrapped its tokens.
   return block.html.replace(/\\n/g, "<br>");
+}
+
+// The block's source still carries its fence lines; the body is between them.
+function fenceBody(block) {
+  const lines = (block.source || "").split("\\n");
+  if (!lines.length) return "";
+  const opening = lines[0].trim();
+  if (opening.charAt(0) !== "`" && opening.charAt(0) !== "~") return lines.join("\\n");
+  const marker = opening.charAt(0);
+  let width = 0;
+  while (width < opening.length && opening.charAt(width) === marker) width++;
+  const body = lines.slice(1);
+  while (body.length && body[body.length - 1].trim().indexOf(marker.repeat(width)) !== 0) body.pop();
+  if (body.length) body.pop();
+  return body.join("\\n");
+}
+
+function codeBlockHtml(block) {
+  const body = fenceBody(block);
+  const language = (block.language || "").toLowerCase();
+  let code = escapeHtml(body);
+  const engine = window.hljs;
+  if (engine && language && language !== "text" && engine.getLanguage(language)) {
+    try { code = engine.highlight(body, {language: language, ignoreIllegals: true}).value; }
+    catch (error) { /* an engine failure must never cost a review */ }
+  }
+  const label = language && language !== "text" ? '<span class="lang">' + escapeHtml(language) + "</span>" : "";
+  return label + "<pre><code>" + code + "</code></pre>";
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function tableHtml(block) {
@@ -2040,6 +2284,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
         # origin, so the page needs no external resource and works offline.
         if len(rest) == 2 and rest[0] == "font" and rest[1] in FONT_FILES:
             return "font"
+        if len(rest) == 2 and rest[0] == "vendor" and rest[1] in VENDOR_FILES:
+            return "vendor"
         return None
 
     def respond(self, status: int, body: bytes = b"", content_type: str = "text/plain; charset=utf-8") -> None:
@@ -2095,6 +2341,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
             name = urllib.parse.urlsplit(self.path).path.split("/")[-1]
             self.respond(200, FONT_FILES[name].read_bytes(), "font/woff2")
             return
+        if route == "vendor":
+            name = urllib.parse.urlsplit(self.path).path.split("/")[-1]
+            self.respond(200, (ASSET_VENDOR / name).read_bytes(), VENDOR_FILES[name])
+            return
         if route is None:
             self.fail(404, "not found")
             return
@@ -2102,7 +2352,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         route = self.route()
-        if route in ("page", "review", "doc", "font"):
+        if route in ("page", "review", "doc", "font", "vendor"):
             self.fail(405, f"{route} needs POST")
             return
         if route not in ("decision", "doc-decision"):

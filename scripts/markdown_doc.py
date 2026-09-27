@@ -109,9 +109,11 @@ def _classify(stripped: str) -> str:
     return "text"
 
 
-def _row(number: int, stripped: str) -> dict:
+def _row(number: int, stripped: str, raw: str = "") -> dict:
     kind = _classify(stripped)
-    row: dict = {"n": number, "kind": kind}
+    # `text` is the raw source line, kept beside the rendered html so a block can
+    # hand a real markdown engine exactly the lines the comment will name.
+    row: dict = {"n": number, "kind": kind, "text": raw if raw else stripped}
     if kind == "blank":
         row["html"] = ""
         return row
@@ -176,7 +178,7 @@ def rows(text: str) -> list[dict]:
             fence = marker
             out.append({"n": number, "kind": "code", "html": _escape(line), "text": line})
             continue
-        out.append(_row(number, stripped))
+        out.append(_row(number, stripped, line))
     return out
 # --------------------------------------------------------------------------
 # blocks
@@ -242,7 +244,8 @@ def _block(kind: str, taken: "list[dict]") -> dict:
         block["level"] = taken[0]["level"]
     if taken[0].get("checked") is not None:
         block["checked"] = taken[0]["checked"]
-    if kind == "code":
-        # A reviewer tokenizes code from its raw text, not from escaped html.
-        block["source"] = "\n".join(item.get("text", "") for item in taken)
+    # The raw source travels with every block: a real markdown engine renders
+    # the inside of a block, and the reviewer needs the fence's language. The
+    # html above stays the escaped fallback when no engine is available.
+    block["source"] = "\n".join(item.get("text", "") for item in taken)
     return block

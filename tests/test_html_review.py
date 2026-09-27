@@ -269,7 +269,15 @@ class ServerRouteTests(ReviewCase):
         page = body.decode("utf-8")
         self.assertIn("default-src 'none'", headers["Content-Security-Policy"])
         self.assertIn("style-src 'unsafe-inline'", headers["Content-Security-Policy"])
-        self.assertIn("script-src 'unsafe-inline'", headers["Content-Security-Policy"])
+        policy = headers["Content-Security-Policy"]
+        # Same-origin vendored scripts are allowed now; nothing else is, and no
+        # directive may be declared twice (the last one silently wins, which is
+        # how an earlier policy ended up blocking the page's own script).
+        self.assertIn("script-src 'self' 'unsafe-inline'", policy)
+        for directive in ("default-src", "style-src", "script-src", "connect-src", "font-src"):
+            self.assertEqual(1, policy.count(directive + " "), f"{directive} must be declared once")
+        self.assertNotIn("http://", policy)
+        self.assertNotIn("https://", policy)
         self.assertEqual("nosniff", headers["X-Content-Type-Options"])
         self.assertNotIn("Access-Control-Allow-Origin", headers)
         self.assertIn(session.token, page, "the page needs its own token to reach its routes")
@@ -1112,36 +1120,31 @@ class DocumentBlockRangeTests(DocumentCase):
         self.assertIsNone(session.result(timeout=0.3))
 
 
-class CodeTokenizingTests(DocumentCase):
-    """A fenced code block is tokenized server side, so the page never guesses."""
+class CodeBlockLanguageTests(DocumentCase):
+    """The page tokenizes; the server only records which language a fence claims."""
 
     def fenced(self, body: str, language: str = "python") -> str:
-        self.doc.write_text(
-            f"# T\n\n```{language}\n{body}\n```\n\nAfter.\n", encoding="utf-8"
-        )
+        self.doc.write_text(f"# T\n\n```{language}\n{body}\n```\n\nAfter.\n", encoding="utf-8")
         return self.document_session()
 
-    def test_a_known_language_is_tokenized(self) -> None:
-        session = self.fenced("x = 1  # a count\ns = 'hi'")
+    def test_the_fence_language_reaches_the_block(self) -> None:
+        session = self.fenced("x = 1  # a count")
         block = next(b for b in session.payload["blocks"] if b["kind"] == "code")
         self.assertEqual("python", block["language"])
-        self.assertIn('<span class="tok-num">1</span>', block["html"])
-        self.assertIn('<span class="tok-com"># a count</span>', block["html"])
-        self.assertIn("<span class=\"tok-str\">'hi'</span>", block["html"])
+        self.assertIn("x = 1  # a count", block["source"])
 
-    def test_the_fence_lines_are_not_part_of_the_body(self) -> None:
-        session = self.fenced("value = 2")
-        block = next(b for b in session.payload["blocks"] if b["kind"] == "code")
-        self.assertEqual("value = 2", block["html"].replace('<span class="tok-num">2</span>', "2"))
-
-    def test_an_unknown_language_stays_plain_and_says_nothing(self) -> None:
+    def test_an_unknown_language_is_passed_through_not_guessed(self) -> None:
         session = self.fenced("value = 2", language="brainfuck")
         block = next(b for b in session.payload["blocks"] if b["kind"] == "code")
-        self.assertEqual("brainfuck", block["language"])
-        self.assertNotIn("tok-", block["html"], "an unknown language must not be guessed at")
-        self.assertIn("value = 2", block["html"])
+        self.assertEqual("brainfuck", block["language"], "the engine decides what it knows, not the server")
 
-    def test_source_html_in_a_code_block_still_escaped(self) -> None:
+    def test_a_bare_fence_claims_no_language(self) -> None:
+        self.doc.write_text("# T\n\n```\nplain\n```\n", encoding="utf-8")
+        session = self.document_session()
+        block = next(b for b in session.payload["blocks"] if b["kind"] == "code")
+        self.assertEqual("", block["language"])
+
+    def test_source_html_in_a_code_block_is_still_escaped(self) -> None:
         session = self.fenced("x = '<script>alert(1)</script>'")
         block = next(b for b in session.payload["blocks"] if b["kind"] == "code")
         self.assertNotIn("<script>", block["html"])
@@ -1151,8 +1154,7 @@ class CodeTokenizingTests(DocumentCase):
         session = self.fenced("value = 2")
         kinds = [b["kind"] for b in session.payload["blocks"]]
         self.assertEqual(["heading", "blank", "code", "blank", "text"], kinds)
-        prose = next(b for b in session.payload["blocks"] if b["kind"] == "text")
-        self.assertNotIn("tok-", prose["html"], "only code is tokenized")
+        self.assertNotIn("language", next(b for b in session.payload["blocks"] if b["kind"] == "text"))
 
 
 class PageSurfaceTests(ReviewCase):
@@ -1213,3 +1215,12 @@ class PageSurfaceTests(ReviewCase):
         for key in ('"reviewUrl":"api/review"', '"decisionUrl":"api/decision"'):
             self.assertIn(key, page)
         self.assertNotIn("api/doc", page, "a diff page must not point at the document routes")
+
+    def test_the_page_never_shadows_a_vendored_global(self) -> None:
+        # highlight.js declares `hljs` and markdown-it declares `markdownit` at
+        # global scope. A `const` of the same name in the inline script is a
+        # SyntaxError that stops the whole page from rendering.
+        script = self.page_script()
+        for name in ("hljs", "markdownit"):
+            with self.subTest(name=name):
+                self.assertNotRegex(script, r"(?:const|let|var)\s+%s\b" % name)

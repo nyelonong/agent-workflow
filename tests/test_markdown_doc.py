@@ -109,7 +109,7 @@ class LineInvariant(unittest.TestCase):
 
     def test_single_line_without_trailing_newline(self):
         produced = self.assert_invariant("just one line")
-        self.assertEqual(produced[0], {"n": 1, "kind": "text", "html": "just one line"})
+        self.assertEqual(produced[0], {"n": 1, "kind": "text", "text": "just one line", "html": "just one line"})
 
     def test_trailing_newline_adds_no_row(self):
         self.assert_invariant("one\ntwo\n")
@@ -121,8 +121,11 @@ class LineInvariant(unittest.TestCase):
         self.assertEqual(markdown_doc.rows(chr(0xFEFF)), [])
 
     def test_only_a_newline_is_one_blank_line(self):
-        self.assertEqual(markdown_doc.rows("\n"), [{"n": 1, "kind": "blank", "html": ""}])
-        self.assertEqual(markdown_doc.rows("\n\n\n"), [{"n": n, "kind": "blank", "html": ""} for n in (1, 2, 3)])
+        self.assertEqual(markdown_doc.rows("\n"), [{"n": 1, "kind": "blank", "text": "", "html": ""}])
+        self.assertEqual(
+            markdown_doc.rows("\n\n\n"),
+            [{"n": n, "kind": "blank", "text": "", "html": ""} for n in (1, 2, 3)],
+        )
 
 
 class FencedCode(unittest.TestCase):
@@ -264,7 +267,10 @@ class Blocks(unittest.TestCase):
 
     def test_heading_levels_and_trailing_hashes(self):
         self.assertEqual(markdown_doc.rows("### three")[0]["level"], 3)
-        self.assertEqual(markdown_doc.rows("## closed ##")[0], {"n": 1, "kind": "heading", "level": 2, "html": "closed"})
+        self.assertEqual(
+            markdown_doc.rows("## closed ##")[0],
+            {"n": 1, "kind": "heading", "text": "## closed ##", "level": 2, "html": "closed"},
+        )
         self.assertEqual(markdown_doc.rows("###### six")[0]["level"], 6)
         self.assertEqual(markdown_doc.rows("#nospace")[0]["kind"], "text")
 
@@ -277,7 +283,7 @@ class Blocks(unittest.TestCase):
 
     def test_quote_keeps_content_and_drops_the_marker(self):
         produced = markdown_doc.rows("> quoted **line**")
-        self.assertEqual(produced[0], {"n": 1, "kind": "quote", "html": "quoted <b>line</b>"})
+        self.assertEqual(produced[0], {"n": 1, "kind": "quote", "text": "> quoted **line**", "html": "quoted <b>line</b>"})
 
 
 class MalformedInput(unittest.TestCase):
@@ -388,3 +394,29 @@ class BlockTests(unittest.TestCase):
     def test_a_block_carries_the_html_of_its_lines(self) -> None:
         block = next(b for b in markdown_doc.blocks("a **bold** para\n") if b["kind"] == "text")
         self.assertIn("<b>bold</b>", block["html"])
+
+
+class RawSourceTests(unittest.TestCase):
+    """A block hands a real markdown engine the lines a comment will name."""
+
+    def test_every_row_keeps_its_raw_source_line(self) -> None:
+        document = "## Title\n\nA **bold** line\nand a plain one\n\n- item\n\n> quoted\n"
+        for row in markdown_doc.rows(document):
+            with self.subTest(n=row["n"]):
+                self.assertIn("text", row, "a row without its raw line cannot be re-rendered")
+        by_number = {row["n"]: row["text"] for row in markdown_doc.rows(document)}
+        self.assertEqual("## Title", by_number[1])
+        self.assertEqual("A **bold** line", by_number[3])
+        self.assertEqual("> quoted", by_number[8])
+
+    def test_a_block_carries_the_source_of_exactly_its_lines(self) -> None:
+        document = "intro\n\nfirst\nsecond\n\n## Next\n"
+        lines = document.splitlines()
+        for block in markdown_doc.blocks(document):
+            with self.subTest(kind=block["kind"]):
+                expected = lines[block["start"] - 1 : block["end"]]
+                self.assertEqual(expected, block["source"].split("\n"))
+
+    def test_a_heading_block_is_its_raw_line(self) -> None:
+        block = next(b for b in markdown_doc.blocks("## Goals\n\ntext\n") if b["kind"] == "heading")
+        self.assertEqual("## Goals", block["source"])
