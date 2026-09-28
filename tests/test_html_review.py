@@ -191,6 +191,48 @@ class PatchParsingTests(unittest.TestCase):
         self.assertEqual((0, 0, False), (added, removed, binary))
         self.assertEqual([], [line for line in lines if line.selectable])
 
+    def test_a_form_feed_inside_a_line_does_not_shift_the_lines_after_it(self) -> None:
+        # git copies a form feed into the patch as ordinary file content, so
+        # splitting on it would cut the line in two and renumber everything
+        # below it, and a comment would anchor to the wrong line.
+        lines, added, removed, _ = html_review.parse_patch(
+            b"diff --git a/x.txt b/x.txt\n--- a/x.txt\n+++ b/x.txt\n"
+            b"@@ -1,2 +1,3 @@\n alpha\n+bravo\x0ccharlie\n delta\n"
+        )
+        self.assertEqual((1, 0), (added, removed))
+        self.assertEqual(
+            [("context", 1, 1), ("add", None, 2), ("context", 2, 3)],
+            [(line.type, line.old_line, line.new_line) for line in lines[4:]],
+        )
+        self.assertEqual("bravo\x0ccharlie", lines[5].text, "the line keeps the character git sent")
+
+
+class PayloadLineNumberingTests(ReviewCase):
+    """Real git output, so the numbering the page renders is git's own."""
+
+    def rows(self, path: str) -> list[dict]:
+        return self.file(self.session().payload, path)["lines"]
+
+    def test_a_modified_file_numbers_every_line_after_a_form_feed(self) -> None:
+        (self.root / "a.py").write_text("print('one')\npage\x0cbreak\nprint('three')\n", encoding="utf-8")
+        rows = [row for row in self.rows("a.py") if row["type"] != "meta"]
+        self.assertEqual(
+            [("context", 1, 1), ("add", None, 2), ("add", None, 3)],
+            [(row["type"], row["old_line"], row["new_line"]) for row in rows],
+        )
+        self.assertEqual("page\x0cbreak", rows[1]["text"])
+
+    def test_an_untracked_file_numbering_counts_its_real_lines(self) -> None:
+        (self.root / "untracked.txt").write_text("form\x0cfeed\nsecond\n", encoding="utf-8")
+        item = self.file(self.session().payload, "untracked.txt")
+        rows = [row for row in item["lines"] if row["type"] != "meta"]
+        self.assertEqual(
+            [("add", None, 1), ("add", None, 2)],
+            [(row["type"], row["old_line"], row["new_line"]) for row in rows],
+        )
+        self.assertEqual((2, 0), (item["added"], item["removed"]))
+        self.assertEqual("form\x0cfeed", rows[0]["text"], "the hunk count and the row agree on one line")
+
 
 # ---------------------------------------------------------------------------
 # the request, exactly as RDG validates it

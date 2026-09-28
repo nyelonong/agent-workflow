@@ -577,6 +577,19 @@ def decode_text(data: bytes) -> "str | None":
     except UnicodeDecodeError:
         return None
 
+def split_patch_lines(text: str) -> "list[str]":
+    """Splits patch or file text into lines the way git does: on newlines only.
+
+    ``str.splitlines`` also breaks on form feed, vertical tab, U+2028 and the
+    other Unicode line boundaries, which git copies into a patch as ordinary
+    file content. One such character would split a line in two and shift every
+    line number after it, so a comment would anchor to the wrong line.
+    """
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
 
 def synthesize_added_patch(path: str, mode: str, data: bytes) -> bytes:
     """Builds the all-added patch an untracked file would produce.
@@ -595,7 +608,7 @@ def synthesize_added_patch(path: str, mode: str, data: bytes) -> bytes:
     if text is None:
         lines.append(f"Binary files /dev/null and b/{path} differ")
     else:
-        body = text.splitlines()
+        body = split_patch_lines(text)
         lines.append(f"@@ -0,0 +1,{len(body)} @@")
         lines.extend(f"+{line}" for line in body)
     return ("\n".join(lines) + "\n").encode("utf-8")

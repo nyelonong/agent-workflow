@@ -237,7 +237,7 @@ def parse_patch(patch: bytes) -> "tuple[list[DiffLine], int, int, bool]":
     new_line: "int | None" = None
     in_hunk = False
 
-    for raw in patch.decode("utf-8", "replace").splitlines():
+    for raw in task_review.split_patch_lines(patch.decode("utf-8", "replace")):
         header = HUNK_HEADER.match(raw)
         if header is not None:
             in_hunk = True
