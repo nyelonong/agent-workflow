@@ -735,9 +735,21 @@ ul{list-style:none; margin:0; padding:0}
 h2{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; margin:0}
 
 /* ---------------------------------------------------------------- header */
-header{padding:14px 18px 12px; border-bottom:1px solid var(--line); background:var(--surface)}
+header{
+  padding:14px 18px 12px; border-bottom:1px solid var(--line); background:var(--surface);
+  min-height:0; max-height:34vh; overflow:auto;
+}
+/* The body is a four-row grid whose last row is the decision footer, and the
+   body is overflow:hidden so the diff can scroll on its own. An unbounded
+   header therefore does not just grow: a criterion with a long URL in it wraps
+   until the header is taller than the window, the footer is pushed past the
+   bottom edge, and every decision button becomes unreachable. Capping the
+   header keeps the footer on screen; the header scrolls when it has to. */
 header .top{display:flex; align-items:flex-start; gap:12px; justify-content:space-between}
-header h1{font-size:17px; line-height:1.35; font-weight:650; margin:0; letter-spacing:-.01em}
+header h1{
+  font-size:17px; line-height:1.35; font-weight:650; margin:0; letter-spacing:-.01em;
+  min-width:0; overflow-wrap:anywhere;
+}
 header h1 .label{color:var(--muted); font-weight:500}
 header .meta{color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
 header .meta code{font-size:11.5px; color:var(--faint)}
