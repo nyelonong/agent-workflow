@@ -78,6 +78,12 @@ IDLE_SECONDS = 900.0
 LIFETIME_ENV = "HTML_REVIEW_LIFETIME"
 IDLE_ENV = "HTML_REVIEW_IDLE"
 
+# A page that is closing is either gone or about to be replaced by a reload, and
+# a browser may report the close before or after it requests the replacement.
+# Each page served carries a number; a close withdraws the review only when it
+# names the newest page and no newer page is requested within this long.
+CLOSE_GRACE_SECONDS = 5.0
+
 EXIT_OK = 0
 EXIT_ERROR = 2
 
@@ -515,8 +521,8 @@ def cancelled_result(request: task_review.ReviewRequest) -> dict[str, Any]:
 
 
 SEMANTIC_MESSAGES = {
-    "the RDG review requested changes without feedback": "a request for changes needs at least one comment",
-    "the RDG review returned annotations for a cancelled review": "a cancelled review must not carry annotations",
+    "the reviewer requested changes without feedback": "a request for changes needs at least one comment",
+    "the reviewer returned annotations for a cancelled review": "a cancelled review must not carry annotations",
 }
 
 
@@ -1127,7 +1133,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 <script src="vendor/highlight.min.js"></script>
 <script src="vendor/mermaid.min.js"></script>
 <script>
-"use strict";"use strict";
+"use strict";
 const boot = JSON.parse(document.getElementById("boot").textContent);
 const el = (id) => document.getElementById(id);
 
@@ -1394,18 +1400,11 @@ function tokenLines(file) {
   return perLine;
 }
 
-function tokenFragment(text) {
-  const engine = window.hljs;
-  if (!engine) return null;
-  return escapeHtml(text);
-}
-
 // highlight.js emits a flat run of spans and keeps the file's real newlines, so
 // a line boundary closes whatever is still open and re-opens it on the next
 // line. A stack handles the general case and costs nothing: the depth is zero or
 // one in practice.
 const NEWLINE = String.fromCharCode(10);
-const NEWLINE_BLANK = String.fromCharCode(10);
 
 function splitTokenHtml(html) {
   const lines = [];
@@ -1719,8 +1718,8 @@ function renderBlockMarkdown(block) {
   if (!Object.keys(footnotes).length) return md.render(source);
   const refs = footnoteRefs(source).filter((id) => footnotes[id] !== undefined);
   if (!refs.length) return md.render(source);
-  const carried = refs.map((id) => footnotes[id]).join(NEWLINE_BLANK);
-  return md.render(source + NEWLINE_BLANK + NEWLINE_BLANK + carried);
+  const carried = refs.map((id) => footnotes[id]).join(NEWLINE);
+  return md.render(source + NEWLINE + NEWLINE + carried);
 }
 
 function blockBody(block) {
@@ -2357,11 +2356,12 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("pagehide", () => {
-  // A closed window is a withdrawn review: say so instead of hanging the gate.
+  // A closed window is a withdrawn review, but a reload also ends the page: the
+  // server withdraws the review only if this is still the newest page.
   if (state.submitted) return;
   state.submitted = true;
   try {
-    navigator.sendBeacon(boot.url + boot.decisionUrl, JSON.stringify({decision: "cancelled", annotations: []}));
+    navigator.sendBeacon(boot.url + "api/closing?page=" + boot.page);
   } catch (ignored) {}
 });
 
@@ -2380,12 +2380,13 @@ loadReview().then((data) => {
 """
 
 
-def render_page(token: str, mode: str = "diff") -> bytes:
+def render_page(token: str, mode: str = "diff", page: int = 0) -> bytes:
     """The one self-contained page, with its own token and mode baked into the
     boot JSON. A document review loads the same page and renders a document."""
     boot = json.dumps(
         {
             "url": f"/{token}/",
+            "page": page,
             "maxLines": MAX_RENDERED_LINES_PER_FILE,
             "mode": mode,
             "reviewUrl": "api/review" if mode == "diff" else "api/doc",
@@ -2435,6 +2436,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return "doc"
         if rest == ["api", "doc-decision"]:
             return "doc-decision"
+        if rest == ["api", "closing"]:
+            return "closing"
         # The code font is bundled with the reviewer and served from this same
         # origin, so the page needs no external resource and works offline.
         if len(rest) == 2 and rest[0] == "font" and rest[1] in FONT_FILES:
@@ -2476,7 +2479,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         route = self.route()
         if route == "page":
-            self.respond(200, render_page(self.session.token, self.session.mode), "text/html; charset=utf-8")
+            page = self.session.next_page()
+            self.respond(200, render_page(self.session.token, self.session.mode, page), "text/html; charset=utf-8")
             return
         if route == "review":
             self.respond(
@@ -2509,6 +2513,14 @@ class ReviewHandler(BaseHTTPRequestHandler):
         route = self.route()
         if route in ("page", "review", "doc", "font", "vendor"):
             self.fail(405, f"{route} needs POST")
+            return
+        if route == "closing":
+            page = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("page", [""])[0]
+            if not page.isascii() or not page.isdigit() or len(page) > 9 or int(page) < 1:
+                self.fail(400, "a closing report needs the number of the page that is closing")
+                return
+            self.session.begin_close(int(page))
+            self.respond(204)
             return
         if route not in ("decision", "doc-decision"):
             self.fail(404, "not found")
@@ -2572,6 +2584,7 @@ class ReviewSession:
         host: str = HOST,
         lifetime_seconds: float = LIFETIME_SECONDS,
         idle_seconds: float = IDLE_SECONDS,
+        close_grace_seconds: float = CLOSE_GRACE_SECONDS,
         mode: str = "diff",
     ) -> None:
         self.request = request
@@ -2594,6 +2607,9 @@ class ReviewSession:
         self._reason: "str | None" = None
         self.lifetime_seconds = lifetime_seconds
         self.idle_seconds = idle_seconds
+        self.close_grace_seconds = close_grace_seconds
+        self._closing: "threading.Timer | None" = None
+        self._page = 0
 
     @property
     def host(self) -> str:
@@ -2634,6 +2650,30 @@ class ReviewSession:
         """Ends the review with no decision: withdrawn, never approved."""
         self.submit(cancelled_result(self.request))
 
+    def next_page(self) -> int:
+        """Numbers a page being served; a newer page cancels a pending close."""
+        with self._lock:
+            self._page += 1
+            page = self._page
+        self.cancel_close()
+        return page
+
+    def begin_close(self, page: int) -> None:
+        """A page is closing: withdraw the review unless a newer page exists or
+        is requested within the grace period."""
+        with self._lock:
+            if self._result is not None or self._closing is not None or page != self._page:
+                return
+            self._closing = threading.Timer(self.close_grace_seconds, self.stop)
+            self._closing.daemon = True
+            self._closing.start()
+
+    def cancel_close(self) -> None:
+        with self._lock:
+            closing, self._closing = self._closing, None
+        if closing is not None:
+            closing.cancel()
+
     def result(self, timeout: "float | None" = None) -> "dict[str, Any] | None":
         if not self._decided.wait(timeout):
             return None
@@ -2644,6 +2684,7 @@ class ReviewSession:
         if self._closed:
             return
         self._closed = True
+        self.cancel_close()
         self._httpd.shutdown()
         self._httpd.server_close()
 

@@ -676,7 +676,7 @@ class TimeoutTests(ReviewCase):
             **{task_review.LAUNCHER_ENV: "/nonexistent/rdg"},
         )
         self.assertNoApproval(result)
-        self.assertIn("unable to run the RDG launcher", result.stderr)
+        self.assertIn("unable to run the reviewer", result.stderr)
 
 
 class PackagingTests(unittest.TestCase):

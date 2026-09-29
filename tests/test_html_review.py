@@ -547,10 +547,62 @@ class DecisionTests(ReviewCase):
         self.assertEqual("cancelled", result["decision"])
         self.assertEqual([], result["annotations"])
 
-    def test_the_page_reports_a_closed_window_with_the_beacon_the_page_sends(self) -> None:
-        # What navigator.sendBeacon posts on pagehide, verbatim in shape.
+    def page_number(self, session: html_review.ReviewSession) -> int:
+        status, body, _ = get(session.url)
+        self.assertEqual(200, status)
+        return int(re.search(rb'"page":(\d+)', body).group(1))
+
+    def close_page(self, session: html_review.ReviewSession, page: int) -> int:
+        status, _ = post(f"{session.url}api/closing?page={page}", b"")
+        return status
+
+    def test_a_closed_window_cancels_once_the_grace_period_passes(self) -> None:
         session = self.session()
-        status, _ = post(f"{session.url}api/decision", json.dumps({"decision": "cancelled", "annotations": []}).encode())
+        session.close_grace_seconds = 0.2
+        self.assertEqual(204, self.close_page(session, self.page_number(session)))
+        self.assertEqual("cancelled", session.result(timeout=5)["decision"])
+
+    def test_reloading_the_page_keeps_the_review_alive(self) -> None:
+        # Chromium requests the reloaded page before the old page reports that it is closing.
+        session = self.session()
+        session.close_grace_seconds = 0.1
+        old = self.page_number(session)
+        self.page_number(session)
+        self.assertEqual(204, self.close_page(session, old))
+        self.assertIsNone(session.result(timeout=0.5), "a reload must not withdraw the review")
+        status, _ = post(f"{session.url}api/decision", {"decision": "approve", "annotations": []})
+        self.assertEqual(204, status)
+        self.assertEqual("approve", session.result(timeout=5)["decision"])
+
+    def test_a_closing_report_that_arrives_before_the_reloaded_page_is_requested(self) -> None:
+        session = self.session()
+        session.close_grace_seconds = 2.0
+        old = self.page_number(session)
+        self.assertEqual(204, self.close_page(session, old))
+        self.page_number(session)
+        self.assertIsNone(session.result(timeout=3.0), "a reload must not withdraw the review")
+        status, _ = post(f"{session.url}api/decision", {"decision": "approve", "annotations": []})
+        self.assertEqual(204, status)
+        self.assertEqual("approve", session.result(timeout=5)["decision"])
+
+    def test_closing_is_behind_the_token_and_needs_post_and_a_page_number(self) -> None:
+        session = self.session()
+        session.close_grace_seconds = 0.1
+        page = self.page_number(session)
+        status, _ = post(f"{session.base_url}/api/closing?page={page}", b"")
+        self.assertEqual(404, status)
+        status, _, _ = get(f"{session.url}api/closing?page={page}")
+        self.assertEqual(405, status)
+        for query in ("", "?page=", "?page=x", "?page=-1", "?page=0", "?page=" + "9" * 5000):
+            with self.subTest(query=query):
+                status, _ = post(f"{session.url}api/closing{query}", b"")
+                self.assertEqual(400, status)
+        self.assertIsNone(session.result(timeout=0.5), "none of these requests may withdraw the review")
+
+    def test_an_explicit_cancel_still_ends_the_review_at_once(self) -> None:
+        session = self.session()
+        session.close_grace_seconds = 60
+        status, _ = post(f"{session.url}api/decision", {"decision": "cancelled", "annotations": []})
         self.assertEqual(204, status)
         self.assertEqual("cancelled", session.result(timeout=5)["decision"])
 
@@ -1363,3 +1415,11 @@ class DiffRowContentTests(ReviewCase):
         for row in rows:
             with self.subTest(type=row["type"], text=row["text"]):
                 self.assertEqual(row["text"], row["shown"])
+
+    def test_the_page_reports_a_closing_window_and_never_cancels_from_pagehide(self) -> None:
+        script = self.page_script()
+        handler = script[script.index('addEventListener("pagehide"'):]
+        handler = handler[: handler.index("});")]
+        self.assertIn("api/closing", handler)
+        self.assertIn("boot.page", handler, "the server needs to know which page is closing")
+        self.assertNotIn("cancelled", handler, "a reload fires pagehide; only the server may decide it was a close")

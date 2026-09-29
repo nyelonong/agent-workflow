@@ -82,7 +82,7 @@ class GitError(TaskReviewError):
 
 
 class LauncherError(TaskReviewError):
-    """The RDG launcher could not be run, or failed."""
+    """The reviewer could not be run, or failed."""
 
 
 class ResultError(TaskReviewError):
@@ -143,14 +143,14 @@ def resolve_reviewer(environ: "os._Environ[str] | dict[str, str]") -> str:
     return DEFAULT_REVIEWER
 
 
-def launch_review(launcher: str, request_json: str, timeout: "int | None") -> bytes:
-    """Runs ``<launcher> --review <request-json>`` and returns raw stdout.
+def run_reviewer(launcher: str, flag: str, request_json: str, timeout: "int | None", timed_out: str) -> bytes:
+    """Runs ``<launcher> <flag> <request-json>`` and returns raw stdout.
 
-    The launcher blocks until a human decides, so the default timeout is
-    generous and ``None`` means wait forever. Launcher stderr is forwarded to
-    this client's stderr for diagnostics; only stdout is validated.
+    The reviewer blocks until a human decides, so the default timeout is
+    generous and ``None`` means wait forever. Its stderr is forwarded to this
+    client's stderr for diagnostics; only stdout is validated.
     """
-    command = [*resolve_launcher_command(launcher), "--review", request_json]
+    command = [*resolve_launcher_command(launcher), flag, request_json]
     try:
         completed = subprocess.run(
             command,
@@ -159,34 +159,7 @@ def launch_review(launcher: str, request_json: str, timeout: "int | None") -> by
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        raise LauncherError("the RDG review timed out before a human decided") from None
-    except OSError as error:
-        raise LauncherError(f"unable to run the RDG launcher: {error}") from None
-    stderr = completed.stderr.decode("utf-8", "replace")
-    if stderr:
-        sys.stderr.write(stderr)
-    if completed.returncode != 0:
-        raise LauncherError(stderr.strip() or f"the RDG launcher exited with code {completed.returncode}")
-    return completed.stdout
-
-
-def launch_document(launcher: str, request_json: str, timeout: "int | None") -> bytes:
-    """Runs ``<launcher> --review-doc <request-json>`` for a document review.
-
-    The same contract as a diff review -- one JSON request, one JSON result on
-    stdout -- on a different flag, so a reviewer that only speaks diffs fails
-    loudly instead of silently reviewing the wrong thing.
-    """
-    command = [*resolve_launcher_command(launcher), "--review-doc", request_json]
-    try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        raise LauncherError("the document review timed out before a human decided") from None
+        raise LauncherError(timed_out) from None
     except OSError as error:
         raise LauncherError(f"unable to run the reviewer: {error}") from None
     stderr = completed.stderr.decode("utf-8", "replace")
@@ -195,6 +168,19 @@ def launch_document(launcher: str, request_json: str, timeout: "int | None") -> 
     if completed.returncode != 0:
         raise LauncherError(stderr.strip() or f"the reviewer exited with code {completed.returncode}")
     return completed.stdout
+
+
+def launch_review(launcher: str, request_json: str, timeout: "int | None") -> bytes:
+    return run_reviewer(launcher, "--review", request_json, timeout, "the review timed out before a human decided")
+
+
+def launch_document(launcher: str, request_json: str, timeout: "int | None") -> bytes:
+    """A document review speaks the same contract on a different flag, so a
+    reviewer that only speaks diffs fails loudly instead of silently reviewing
+    the wrong thing."""
+    return run_reviewer(
+        launcher, "--review-doc", request_json, timeout, "the document review timed out before a human decided"
+    )
 
 
 def resolve_timeout(environ: "dict[str, str]") -> "int | None":
@@ -976,9 +962,9 @@ def validate_decision_semantics(result: dict[str, Any]) -> None:
     if result["decision"] == "request-changes" and not any(
         isinstance(item.get("text"), str) and item["text"].strip() for item in annotations
     ):
-        raise ResultError("the RDG review requested changes without feedback")
+        raise ResultError("the reviewer requested changes without feedback")
     if result["decision"] == "cancelled" and annotations:
-        raise ResultError("the RDG review returned annotations for a cancelled review")
+        raise ResultError("the reviewer returned annotations for a cancelled review")
 
 
 # --------------------------------------------------------------------------
