@@ -126,8 +126,7 @@ surface can serve it.
 | Bundled HTML page | default | no editor, no network, works anywhere |
 | RDG | `TASK_REVIEW_REVIEWER=rdg` | reviews inside a running RDG window; the repository must be open there and the root must be canonical |
 
-Both are verified working, and an approval from either is the same kind of
-approval: fingerprint-bound, single-decision, recorded in the same ledger.
+An approval from either is the same kind of approval: fingerprint-bound, single-decision, recorded in the same ledger.
 
 After editing a shared skill, run `./install.sh install-all`: some runtimes
 receive a link and one receives a copy, so installing one leaves the others
@@ -184,10 +183,11 @@ end_line: 7` and reaches the agent as an exact place to edit. The approval is
 bound to a fingerprint of the document's bytes, so editing the plan after
 approving it invalidates the approval.
 
-Markdown is rendered server side by `scripts/markdown_doc.py` into one block per
-source construct, with the ranges computed by the same pass. Fenced code is
-tokenized by `scripts/highlight.py` only when the fence names a language it
-handles; an unknown language stays plain monospace rather than guessing.
+`scripts/markdown_doc.py` groups the source into one block per construct, with
+the ranges computed by the same pass, and the page renders each block with
+vendored markdown-it. Fenced code is tokenized by vendored highlight.js only when
+the fence names a language it knows; an unknown language stays plain monospace
+rather than guessing.
 
 ## Prewalk
 

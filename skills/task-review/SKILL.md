@@ -41,8 +41,9 @@ stop. Never route around a failed gate.
 The gate speaks one protocol, so the surface is a choice, not a branch. It opens
 the bundled HTML page by default. `TASK_REVIEW_REVIEWER=rdg` sends the identical
 request to RDG, which reviews inside a running editor window; the repository must
-be open there and the root must be a canonical absolute path. Both are verified
-working. Choose by mood, never mid-decision: one approval, one reviewer.
+be open there and the root must be a canonical absolute path. The README records
+a known RDG failure, so keep the HTML page unless told otherwise. Choose by mood,
+never mid-decision: one approval, one reviewer.
 
 ## Commit
 
@@ -98,8 +99,9 @@ Resolve it there, never from the tree under review.
 - `consume --repo ROOT` retires the approval after the commit.
 
 The reviewer is any process that takes one JSON request argument and prints one
-JSON result line. `RDG_CONTROL_COMMAND` selects it and defaults to the `rdg`
-binary. When `rdg` is the reviewer, the repository must already be open in the
+JSON result line. `TASK_REVIEW_REVIEWER` selects it and defaults to the bundled
+HTML page; `RDG_CONTROL_COMMAND` is still honored when it is unset. When `rdg` is
+the reviewer, the repository must already be open in the
 running application, and every repository root must be a canonical absolute
 path — the client realpaths it, so a symlinked path such as `/tmp/x` is
 rejected while `/private/tmp/x` is accepted.

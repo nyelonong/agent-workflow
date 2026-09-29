@@ -4,6 +4,7 @@ import json
 import os
 import re
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1292,3 +1293,73 @@ class PageSurfaceTests(ReviewCase):
         names = _re.findall(r"(?m)^(?:const|let)\s+([A-Za-z_$][\w$]*)", script)
         duplicates = {name for name in names if names.count(name) > 1}
         self.assertEqual(set(), duplicates, "a top-level binding is declared twice")
+
+
+NODE_ROW_CHECK = r"""(() => {
+const fs = require("fs");
+const input = JSON.parse(fs.readFileSync(0, "utf8"));
+const engine = require(input.hljs);
+const window = {hljs: engine};
+const NEWLINE = String.fromCharCode(10);
+const tokenCache = new Map();
+const state = {files: [input.file]};
+const cell = () => ({className: "", dataset: {}, textContent: "", innerHTML: "",
+  append(...kids) { this.kids = kids; }, addEventListener() {}});
+const document = {createElement: cell};
+%(functions)s
+const shown = (code) => code.innerHTML
+  ? code.innerHTML.replace(/<[^>]*>/g, "").replace(/&#x27;/g, "'").replace(/&quot;/g, '"')
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+  : code.textContent;
+const out = [];
+input.file.lines.forEach((line, index) => {
+  if (line.type === "meta") return;
+  const code = makeRow(0, line, index).kids[3];
+  out.push({type: line.type, text: line.text === "" ? " " : line.text, shown: shown(code)});
+});
+process.stdout.write(JSON.stringify(out));
+})();
+"""
+
+
+def js_function(script: str, name: str) -> str:
+    start = script.index(f"function {name}(")
+    depth = 0
+    for index in range(script.index("{", start), len(script)):
+        depth += {"{": 1, "}": -1}.get(script[index], 0)
+        if depth == 0:
+            return script[start : index + 1]
+    raise ValueError(f"{name} is not closed")
+
+
+@unittest.skipUnless(shutil.which("node"), "node is needed to run the page's row code")
+class DiffRowContentTests(ReviewCase):
+    page_script = PageSurfaceTests.page_script
+
+    def rows_as_shown(self, path: str) -> list[dict]:
+        script = self.page_script()
+        functions = "\n".join(
+            js_function(script, name)
+            for name in ("escapeHtml", "sideNumber", "splitTokenHtml", "tokenLines", "lineTokens", "makeRow", "onRowPress")
+        )
+        request = {
+            "hljs": str(ROOT / "assets/vendor/highlight.min.js"),
+            "file": self.file(self.session().payload, path),
+        }
+        completed = subprocess.run(
+            ["node", "-e", NODE_ROW_CHECK % {"functions": functions}],
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        return json.loads(completed.stdout)
+
+    def test_every_highlighted_row_shows_its_own_line(self) -> None:
+        (self.root / "a.py").write_text("import os\nprint('two')\n", encoding="utf-8")
+        rows = self.rows_as_shown("a.py")
+        self.assertEqual({"add", "remove"}, {row["type"] for row in rows})
+        for row in rows:
+            with self.subTest(type=row["type"], text=row["text"]):
+                self.assertEqual(row["text"], row["shown"])

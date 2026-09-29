@@ -309,9 +309,9 @@ def language_for(path: str) -> "str | None":
 def read_for_highlighting(root: str, path: str, binary: bool) -> "str | None":
     """The new-side file text, so a reviewer can tokenize whole files.
 
-    A removed line has no pre-image on disk, so the page tokenizes those as
-    fragments; added and context lines get the real thing. A file too large to
-    be worth sending is simply not highlighted.
+    A removed line has no pre-image on disk, so the page shows those as plain
+    text; added and context lines get the real thing. A file too large to be
+    worth sending is simply not highlighted.
     """
     if binary:
         return None
@@ -1376,7 +1376,7 @@ function renderFiles() {
 // multi-line strings and block comments wrong. Instead the whole new-side file
 // is tokenized once and the resulting markup is split per line, re-opening any
 // span that continues onto the next line. Removed lines have no pre-image on
-// disk, so those are tokenized as fragments and may be approximate.
+// disk, so they are shown as plain text.
 
 const tokenCache = new Map();
 
@@ -1457,9 +1457,8 @@ function splitTokenHtml(html) {
 
 function lineTokens(file, line, side) {
   const perLine = tokenLines(file);
-  if (perLine && line && line > 0) {
-    const index = side === "old" ? line - 1 : line - 1;
-    if (index < perLine.length) return perLine[index];
+  if (side !== "old" && perLine && line && line > 0) {
+    if (line - 1 < perLine.length) return perLine[line - 1];
   }
   return null;
 }

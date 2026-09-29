@@ -9,7 +9,7 @@ Invoke with `$task-review` or after the focused evidence for a unit is in. The g
 
 Run it with the criterion the user approved for this unit and the repository paths the task owns. Scope narrows what the human sees; it never widens it. Read-only investigation, review, and verification need no gate.
 
-The client is `scripts/task_review.py` in the repository that owns this skill; resolve it there, never from the tree under review. `review --criterion TEXT --repo ROOT [--paths a,b]` blocks until the human decides, `verify --repo ROOT [--paths a,b]` checks the recorded approval against the current tree, and `consume --repo ROOT` retires the approval after the commit. Any process that takes one JSON request argument and prints one JSON result line can serve as the reviewer; `RDG_CONTROL_COMMAND` selects it and defaults to the `rdg` binary, so the gate is how every runtime reaches its review surface.
+The client is `scripts/task_review.py` in the repository that owns this skill; resolve it there, never from the tree under review. `review --criterion TEXT --repo ROOT [--paths a,b]` blocks until the human decides, `verify --repo ROOT [--paths a,b]` checks the recorded approval against the current tree, and `consume --repo ROOT` retires the approval after the commit. Any process that takes one JSON request argument and prints one JSON result line can serve as the reviewer; `TASK_REVIEW_REVIEWER` selects it and defaults to the bundled HTML page (`RDG_CONTROL_COMMAND` is still honored when it is unset), so the gate is how every runtime reaches its review surface.
 
 The command exits 0 only for `approve`.
 
