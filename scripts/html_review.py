@@ -756,10 +756,13 @@ header h1{
   font-size:17px; line-height:1.35; font-weight:650; margin:0; letter-spacing:-.01em;
   min-width:0; overflow-wrap:anywhere;
 }
-header h1 .label{color:var(--muted); font-weight:500}
+header .title{display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0}
+#review-brief{margin-top:10px}
+#review-brief summary{cursor:pointer; color:var(--muted); font-size:13px; width:fit-content}
+#criterion{max-width:90ch; margin-top:10px; white-space:pre-wrap; overflow-wrap:anywhere; font-weight:400; line-height:1.65}
 header .meta{color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
 header .meta code{font-size:11.5px; color:var(--faint)}
-.chips{display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-top:9px}
+.chips{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
 .chip{
   display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px;
   border:1px solid var(--line); background:var(--sunken); font-size:11.5px; color:var(--muted);
@@ -805,7 +808,14 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
   gap:8px; padding:10px 12px; border-bottom:1px solid var(--line-soft);
   background:var(--surface);
 }
-#diff{overflow:auto; min-height:0; padding:14px 18px 45vh; scroll-behavior:smooth}
+#diff{overflow:auto; min-height:0; padding:14px 18px; scroll-behavior:smooth}
+#diff::after{content:""; display:block; height:45vh}
+#review-pane{display:flex; flex-direction:column; min-height:0; min-width:0}
+#review-pane #diff{flex:1}
+#current-file{display:flex; gap:12px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--raised)}
+#current-file-path{min-width:0; flex:1; overflow:auto; white-space:nowrap; font:600 12.5px/1.5 var(--mono)}
+#current-file-position{flex:none; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
+body.document #current-file{display:none}
 
 /* ------------------------------------------------------------- file list */
 #files li{
@@ -826,11 +836,12 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
   overflow:hidden; background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.18);
 }
 .file > h3{
-  position:sticky; top:0; z-index:1; margin:0; padding:9px 12px; display:flex; gap:9px;
+  margin:0; padding:9px 12px; display:flex; gap:9px;
   align-items:center; flex-wrap:wrap; background:var(--raised);
   border-bottom:1px solid var(--line); font:600 12.5px/1.4 var(--mono);
 }
 .file > h3 .counts{margin-left:auto; color:var(--muted); font:11.5px/1 var(--sans); font-variant-numeric:tabular-nums}
+.file > h3 > span{overflow-wrap:anywhere; min-width:0}
 .badge{
   font:600 10px/1.7 var(--sans); text-transform:uppercase; letter-spacing:.06em;
   padding:0 7px; border-radius:999px; border:1px solid var(--line); color:var(--muted);
@@ -1032,22 +1043,34 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 .hljs-name,.hljs-tag{color:#ff7b72}
 .hljs-emphasis{font-style:italic} .hljs-strong{font-weight:600}
 .hljs-link{text-decoration:underline}
+@media(max-width:1100px){
+  main,body.document main{grid-template-columns:minmax(120px,19%) minmax(0,1fr) minmax(160px,23%)}
+  #toolbar{flex-wrap:wrap}
+  #toolbar .hint{display:none}
+  footer{grid-template-columns:minmax(0,1fr)}
+}
 [hidden]{display:none !important}
 </style>
 </head>
 <body>
 <header>
   <div class="top">
-    <h1><span class="label">Reviewing against</span><br><span id="criterion"></span></h1>
+    <div class="title">
+      <h1 id="review-title">Review changes</h1>
+      <div class="chips">
+        <span class="chip" id="chip-files"></span>
+        <span class="chip add" id="chip-add"></span>
+        <span class="chip del" id="chip-del"></span>
+      </div>
+    </div>
     <button id="help-open" class="tiny ghost" title="Keyboard shortcuts">? shortcuts</button>
   </div>
   <div class="meta"><code id="review-id"></code></div>
-  <div class="chips">
-    <span class="chip" id="chip-files"></span>
-    <span class="chip add" id="chip-add"></span>
-    <span class="chip del" id="chip-del"></span>
-  </div>
   <ul id="repos"></ul>
+  <details id="review-brief">
+    <summary>Review brief</summary>
+    <div id="criterion"></div>
+  </details>
 </header>
 <div id="toolbar">
   <input id="file-filter" type="search" placeholder="Filter files&hellip;" aria-label="Filter files by path" spellcheck="false">
@@ -1062,7 +1085,13 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
     <div class="panel-head"><h2>Files</h2><span class="chip" id="file-total"></span></div>
     <ul id="files"></ul>
   </aside>
-  <section id="diff"></section>
+  <section id="review-pane" aria-label="Review content">
+    <div id="current-file" hidden>
+      <span id="current-file-path" tabindex="0"></span>
+      <span id="current-file-position"></span>
+    </div>
+    <section id="diff"></section>
+  </section>
   <aside id="threads-panel">
     <div class="panel-head">
       <h2>Comments</h2>
@@ -1154,6 +1183,7 @@ const md = (() => {
 const state = {
   data: null,
   files: [],
+  currentFile: -1,
   threads: [],
   nextThreadId: 1,
   armed: false,
@@ -1342,6 +1372,7 @@ function renderFiles() {
     const index = state.files.indexOf(file);
     const item = document.createElement("li");
     item.tabIndex = 0;
+    item.dataset.file = String(index);
     const name = document.createElement("span");
     name.className = "fname";
     name.appendChild(fileIcon(file));
@@ -1365,15 +1396,33 @@ function renderFiles() {
     const go = () => {
       state.expanded.add(index);
       renderDiff();
-      for (const other of list.children) other.classList.remove("active");
-      item.classList.add("active");
-      const anchor = document.querySelector('[data-file="' + index + '"]');
+      const anchor = el("diff").querySelector('.file[data-file="' + index + '"]');
       if (anchor) anchor.scrollIntoView({block: "start"});
     };
     item.addEventListener("click", go);
     item.addEventListener("keydown", (event) => { if (event.key === "Enter") go(); });
     list.appendChild(item);
   });
+  trackFile();
+}
+
+function trackFile() {
+  if (boot.mode === "document") return;
+  const host = el("diff");
+  const blocks = Array.from(host.children).filter((block) => block.classList.contains("file"));
+  const top = host.getBoundingClientRect().top;
+  const current = blocks.find((block) => block.getBoundingClientRect().bottom > top + 1) || blocks[blocks.length - 1];
+  state.currentFile = current ? Number(current.dataset.file) : -1;
+  el("current-file").hidden = !current;
+  const file = state.files[state.currentFile];
+  el("current-file-path").textContent = file ? file.path : "";
+  el("current-file-path").title = file ? file.repository + "/" + file.path : "";
+  el("current-file-position").textContent = current ? "File " + (blocks.indexOf(current) + 1) + " of " + blocks.length : "";
+  for (const item of el("files").children) {
+    const active = !!current && item.dataset.file === String(state.currentFile);
+    item.classList.toggle("active", active);
+    if (active) item.setAttribute("aria-current", "true"); else item.removeAttribute("aria-current");
+  }
 }
 
 // ---------------------------------------------------------------- diff tokens
@@ -1505,6 +1554,7 @@ function renderDiff() {
     empty.style.padding = "16px";
     empty.textContent = "This review has no changes in scope.";
     host.appendChild(empty);
+    trackFile();
     return;
   }
   visibleFiles().forEach((file) => {
@@ -1572,6 +1622,7 @@ function renderDiff() {
   });
   markThreadedRows();
   paintSelection();
+  trackFile();
 }
 
 // A commented line carries a dot in the gutter, so the diff itself shows where
@@ -1611,6 +1662,7 @@ const BLOCK_CLASS = {
 function renderDocument() {
   const data = state.data;
   document.body.classList.add("document");
+  el("review-title").textContent = "Review document";
   el("criterion").textContent = data.criterion;
   el("review-id").textContent = data.name || data.path;
   const line = document.createElement("div");
@@ -2238,8 +2290,9 @@ el("diff").addEventListener("mousedown", (event) => {
 // Releasing the mouse ends a comment: a click or a dragged range both mean
 // "I want to say something about this", so the box opens straight away instead
 // of making the reader remember a second key.
-el("diff").addEventListener("scroll", () => { trackOutline(); }, {passive: true});
-window.addEventListener("resize", () => { trackOutline(); });
+el("diff").addEventListener("scroll", () => { trackOutline(); trackFile(); }, {passive: true});
+window.addEventListener("resize", () => { trackOutline(); trackFile(); });
+el("review-brief").addEventListener("toggle", () => { trackOutline(); trackFile(); });
 el("diff").addEventListener("mouseup", () => {
   if (state.submitted || !state.selection) return;
   showComposer();
@@ -2285,15 +2338,13 @@ function stepFile(step) {
   const shown = visibleFiles();
   if (!shown.length) return;
   const anchors = shown.map((file) => state.files.indexOf(file));
-  const current = anchors.findIndex((index) => {
-    const box = document.querySelector('[data-file="' + index + '"]');
-    return box && box.getBoundingClientRect().top > 60;
-  });
+  trackFile();
+  const current = anchors.indexOf(state.currentFile);
   const next = current === -1 ? 0 : (current + step + shown.length) % shown.length;
   const index = anchors[next];
   state.expanded.add(index);
   renderDiff();
-  const box = document.querySelector('[data-file="' + index + '"]');
+  const box = el("diff").querySelector('.file[data-file="' + index + '"]');
   if (box) box.scrollIntoView({block: "start"});
   renderFiles();
 }
