@@ -1,5 +1,7 @@
 # Codex adapter
 
+Reuse skill instructions while they remain available in context. Reload after context loss, relevant file updates, or an explicit requirement for a fresh read. Load supporting references only when needed. Required skill invocation, approval, verification, and stop rules still apply.
+
 Use a plain numbered question for required decisions: state the question, recommend one option with its reason, and stop until the user answers. Never treat a sandbox or command approval prompt as product or implementation approval.
 
 For an HTML `task-review` decision, present the review URL in commentary and keep the turn active using the command's supported bounded wait mechanism. Await that same command, then act on its validated decision without asking the user to repeat it in chat. Follow the Codex `task-review` skill for result recovery and exact-state verification. A running command or background notification does not by itself guarantee a new turn after this one ends; do not promise automatic wake-up or install a continuation hook or Goal implicitly.
