@@ -878,6 +878,16 @@ body.document #current-file{display:none}
   background:var(--warn-fg); margin-left:5px; vertical-align:middle}
 .row.threaded.resolved-thread .ln::after{background:var(--accent)}
 .row.flash{animation:flash .9s ease}
+.diff-view-controls{display:flex; gap:3px}
+.diff-view-controls button[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--fg)}
+.file.split .rows{overflow-x:auto}
+.split-row,.split-labels{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); min-width:560px}
+.split-row > .row{grid-template-columns:52px 18px minmax(0,1fr)}
+.split-row > .row:first-child{border-right:1px solid var(--line)}
+.split-row > .blank{background:var(--sunken); min-height:1.66em}
+.split-labels{background:var(--raised); color:var(--muted); font:600 11px/1.5 var(--sans)}
+.split-labels span{padding:6px 12px}
+body.document .diff-view-controls{display:none}
 @keyframes flash{from{background:var(--accent-soft)} to{background:transparent}}
 
 /* --------------------------------------------------------------- threads */
@@ -1084,6 +1094,10 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
   <input id="file-filter" type="search" placeholder="Filter files&hellip;" aria-label="Filter files by path" spellcheck="false">
   <button id="expand-all" class="tiny">Expand all</button>
   <button id="collapse-all" class="tiny">Collapse all</button>
+  <div class="diff-view-controls" role="group" aria-label="Diff layout">
+    <button id="view-inline" class="tiny" aria-pressed="true">Inline</button>
+    <button id="view-split" class="tiny" aria-pressed="false">Side-by-side</button>
+  </div>
   <button id="comments-toggle" class="tiny" aria-controls="threads-panel" aria-expanded="true">Hide comments (0)</button>
   <span class="spacer"></span>
   <span class="hint">Click a line or drag a range to comment &middot; <kbd>?</kbd> for shortcuts</span>
@@ -1171,6 +1185,9 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 <script src="vendor/highlight.min.js"></script>
 <script src="vendor/mermaid.min.js"></script>
 <script>
+__HTML_DIFF_VIEW__
+</script>
+<script>
 "use strict";
 const boot = JSON.parse(document.getElementById("boot").textContent);
 const el = (id) => document.getElementById(id);
@@ -1194,6 +1211,8 @@ const state = {
   files: [],
   currentFile: -1,
   commentsCollapsed: false,
+  diffView: "inline",
+  dragging: false,
   threads: [],
   nextThreadId: 1,
   armed: false,
@@ -1584,6 +1603,65 @@ function makeRow(fileIndex, line, index) {
   return row;
 }
 
+function makeSideCell(fileIndex, index, side) {
+  const row = document.createElement("div");
+  if (index === null) {
+    row.className = "row blank";
+    row.setAttribute("aria-hidden", "true");
+    return row;
+  }
+  const file = state.files[fileIndex];
+  const line = file.lines[index];
+  row.className = "row " + line.type;
+  row.dataset.file = String(fileIndex);
+  row.dataset.row = String(index);
+  row.dataset.side = side;
+  const number = document.createElement("span");
+  number.className = "ln";
+  number.dataset.side = side;
+  number.textContent = String(sideNumber(line, side));
+  const sign = document.createElement("span");
+  sign.className = "sign";
+  sign.textContent = line.type === "add" ? "+" : line.type === "remove" ? "-" : " ";
+  const code = document.createElement("span");
+  code.className = "code";
+  const tokens = lineTokens(file, line.new_line, side === "old" && line.type === "remove" ? "old" : "new");
+  if (tokens !== null && tokens !== undefined) code.innerHTML = tokens || " ";
+  else code.textContent = line.text || " ";
+  row.append(number, sign, code);
+  row.addEventListener("mousedown", (event) => onRowPress(event, fileIndex, index, line, side));
+  return row;
+}
+
+function diffRow(fileIndex, index, side) {
+  const suffix = state.diffView === "split" ? '[data-side="' + side + '"]' : "";
+  return el("diff").querySelector('[data-file="' + fileIndex + '"][data-row="' + index + '"]' + suffix);
+}
+
+function setDiffView(view) {
+  if (boot.mode === "document" || state.diffView === view) return;
+  const host = el("diff");
+  const top = host.getBoundingClientRect().top;
+  const current = Array.from(host.querySelectorAll(".row[data-row]")).find(row => {
+    const line = state.files[Number(row.dataset.file)].lines[Number(row.dataset.row)];
+    return (line.old_line !== null || line.new_line !== null) && row.getBoundingClientRect().bottom > top;
+  });
+  const position = current ? {...current.dataset} : null;
+  state.diffView = view;
+  state.selection = null;
+  state.dragging = false;
+  el("view-inline").setAttribute("aria-pressed", view === "inline" ? "true" : "false");
+  el("view-split").setAttribute("aria-pressed", view === "split" ? "true" : "false");
+  renderDiff();
+  if (position) {
+    const line = state.files[Number(position.file)].lines[Number(position.row)];
+    const side = position.side || (line.new_line !== null ? "new" : "old");
+    const row = diffRow(Number(position.file), Number(position.row), side);
+    if (row) row.scrollIntoView({block: "start"});
+  }
+  trackFile();
+}
+
 function renderDiff() {
   const host = el("diff");
   host.textContent = "";
@@ -1601,7 +1679,7 @@ function renderDiff() {
     const fileIndex = state.files.indexOf(file);
     const open = state.expanded.has(fileIndex);
     const block = document.createElement("article");
-    block.className = "file";
+    block.className = "file" + (state.diffView === "split" ? " split" : "");
     block.dataset.file = String(fileIndex);
 
     const heading = document.createElement("h3");
@@ -1633,8 +1711,28 @@ function renderDiff() {
     if (open) {
       const rows = document.createElement("div");
       rows.className = "rows";
-      const limit = file.lines.length > boot.maxLines ? boot.maxLines : file.lines.length;
-      for (let row = 0; row < limit; row++) rows.appendChild(makeRow(fileIndex, file.lines[row], row));
+      const limit = boot.maxLines > 0 ? Math.min(file.lines.length, boot.maxLines) : file.lines.length;
+      if (state.diffView === "split") {
+        const labels = document.createElement("div");
+        labels.className = "split-labels";
+        for (const text of ["Before", "After"]) {
+          const label = document.createElement("span");
+          label.textContent = text;
+          labels.appendChild(label);
+        }
+        rows.appendChild(labels);
+        for (const pair of ReviewDiff.pairLines(file.lines.slice(0, limit))) {
+          if (pair.meta !== undefined) rows.appendChild(makeRow(fileIndex, file.lines[pair.meta], pair.meta));
+          else {
+            const row = document.createElement("div");
+            row.className = "split-row";
+            row.append(makeSideCell(fileIndex, pair.old, "old"), makeSideCell(fileIndex, pair.new, "new"));
+            rows.appendChild(row);
+          }
+        }
+      } else {
+        for (let row = 0; row < limit; row++) rows.appendChild(makeRow(fileIndex, file.lines[row], row));
+      }
       if (file.binary) {
         const note = document.createElement("div");
         note.className = "row meta";
@@ -1676,7 +1774,7 @@ function markThreadedRows() {
     const rowIndex = file.lines.findIndex(
       (line) => line.type !== "meta" && lineNumberFor(line, thread.target.side) === thread.target.start_line);
     if (rowIndex < 0) continue;
-    const row = el("diff").querySelector('[data-file="' + fileIndex + '"][data-row="' + rowIndex + '"]');
+    const row = diffRow(fileIndex, rowIndex, thread.target.side || "new");
     if (!row) continue;
     row.classList.add("threaded");
     if (thread.resolved) row.classList.add("resolved-thread");
@@ -2011,10 +2109,12 @@ function paintSelection() {
   if (!block) return;
   const from = Math.min(selection.from, selection.to);
   const to = Math.max(selection.from, selection.to);
-  const rows = block.querySelectorAll(".row");
-  for (let index = from; index <= to; index++) {
-    const row = rows[index];
-    if (row) { row.classList.add("sel"); state.painted.push(row); }
+  for (const row of block.querySelectorAll(".row[data-row]")) {
+    const index = Number(row.dataset.row);
+    if (index < from || index > to || (row.dataset.side && row.dataset.side !== selection.side)) continue;
+    if (sideNumber(state.files[selection.fileIndex].lines[index], selection.side) === null) continue;
+    row.classList.add("sel");
+    state.painted.push(row);
   }
 }
 
@@ -2051,13 +2151,18 @@ function jumpToThread(thread) {
   const fileIndex = state.files.findIndex(
     (file) => file.path === thread.target.path && file.repository === thread.target.repository);
   if (fileIndex < 0) return;
+  if (!visibleFiles().includes(state.files[fileIndex])) {
+    state.filter = "";
+    el("file-filter").value = "";
+    renderFiles();
+  }
   state.expanded.add(fileIndex);
   renderDiff();
   const file = state.files[fileIndex];
   const rowIndex = file.lines.findIndex(
     (line) => line.type !== "meta" && lineNumberFor(line, thread.target.side) === thread.target.start_line);
   if (rowIndex < 0) return;
-  const row = el("diff").querySelector('[data-file="' + fileIndex + '"][data-row="' + rowIndex + '"]');
+  const row = diffRow(fileIndex, rowIndex, thread.target.side || "new");
   if (!row) return;
   row.scrollIntoView({block: "center"});
   row.classList.remove("flash");
@@ -2153,22 +2258,32 @@ function renderFooter() {
 
 // ----------------------------------------------------------------- selection
 
-function onRowPress(event, fileIndex, index, line) {
-  if (state.submitted) return;
+function onRowPress(event, fileIndex, index, line, explicitSide) {
+  if (state.submitted || (event.button !== undefined && event.button !== 0)) return;
   const sideCell = event.target.classList.contains("ln") ? event.target.dataset.side : null;
-  const side = sideCell || (line.new_line !== null ? "new" : "old");
+  const side = explicitSide || sideCell || (line.new_line !== null ? "new" : "old");
+  if (sideNumber(line, side) === null) return;
   const current = state.selection;
-  const samePlace = current && current.fileIndex === fileIndex &&
-    Math.min(current.from, current.to) <= index && index <= Math.max(current.from, current.to);
-  if (event.shiftKey && samePlace) {
-    current.to = index;
-  } else if (event.shiftKey && current && current.fileIndex === fileIndex) {
+  if (event.shiftKey && current && current.fileIndex === fileIndex && current.side === side) {
     current.to = index;
   } else {
     state.selection = {fileIndex: fileIndex, side: side, from: index, to: index};
   }
-  state.selection.side = side;
+  state.dragging = true;
   hideComposer();
+  paintSelection();
+}
+
+function extendDiffSelection(event) {
+  if (!state.dragging || !(event.buttons & 1) || !state.selection || state.submitted) return;
+  const row = event.target.closest(".row[data-row]");
+  if (!row || Number(row.dataset.file) !== state.selection.fileIndex) return;
+  const index = Number(row.dataset.row);
+  const line = state.files[state.selection.fileIndex].lines[index];
+  const sideCell = event.target.closest("[data-side]");
+  const side = sideCell ? sideCell.dataset.side : (line.new_line !== null ? "new" : "old");
+  if (side !== state.selection.side || sideNumber(line, side) === null) return;
+  state.selection.to = index;
   paintSelection();
 }
 
@@ -2186,31 +2301,21 @@ function selectionTarget() {
     };
   }
   const file = state.files[selection.fileIndex];
-  const from = Math.min(selection.from, selection.to);
-  const to = Math.max(selection.from, selection.to);
-  let start = null;
-  let end = null;
-  for (let index = from; index <= to; index++) {
-    const value = sideNumber(file.lines[index], selection.side);
-    if (value === null) continue;
-    if (start === null || value < start) start = value;
-    if (end === null || value > end) end = value;
-  }
-  if (start === null) return null;
+  const range = ReviewDiff.rangeFor(file.lines, selection.side, selection.from, selection.to);
+  if (!range) return null;
   return {
     scope: "line",
     repository: file.repository,
     path: file.path,
     side: selection.side,
-    start_line: start,
-    end_line: end,
+    ...range,
   };
 }
 
 function showComposer() {
   const target = selectionTarget();
   if (!target) {
-    say("Those lines do not exist in this document.", "warn");
+    say("Select existing lines on one side within a continuous range.", "warn");
     return;
   }
   state.pendingTarget = target;
@@ -2337,9 +2442,11 @@ function cancelReview() {
 
 el("diff").addEventListener("mousedown", (event) => {
   if (state.submitted || boot.mode === "document") return;
-  if (state.selection && event.target.classList.contains("code")) {
-    const same = state.selection.fileIndex === Number(event.target.parentElement.dataset.file);
-    if (!same) { state.selection = null; paintSelection(); }
+  if (event.target.closest(".row") && !event.target.closest(".row[data-row]")) {
+    state.selection = null;
+    state.dragging = false;
+    hideComposer();
+    paintSelection();
   }
 });
 
@@ -2351,8 +2458,13 @@ window.addEventListener("resize", () => { trackOutline(); trackFile(); });
 el("review-brief").addEventListener("toggle", () => { trackOutline(); trackFile(); });
 el("diff").addEventListener("mouseup", () => {
   if (state.submitted || !state.selection) return;
+  if (boot.mode !== "document" && !state.dragging) return;
+  state.dragging = false;
   showComposer();
 });
+el("diff").addEventListener("mousemove", extendDiffSelection);
+document.addEventListener("mouseup", () => { state.dragging = false; });
+window.addEventListener("blur", () => { state.dragging = false; });
 
 // Arming: the diff arms the keyboard layer, any button parks it again.
 el("diff").addEventListener("mousedown", () => { state.armed = true; });
@@ -2379,6 +2491,8 @@ el("collapse-all").addEventListener("click", () => {
   renderDiff();
 });
 el("comments-toggle").addEventListener("click", () => setCommentsCollapsed(!state.commentsCollapsed));
+el("view-inline").addEventListener("click", () => setDiffView("inline"));
+el("view-split").addEventListener("click", () => setDiffView("split"));
 el("next-thread").addEventListener("click", () => cycleThread(1));
 el("help-open").addEventListener("click", () => { el("help").hidden = false; });
 el("help").addEventListener("click", () => { el("help").hidden = true; });
@@ -2438,6 +2552,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (event.key === "Escape") {
+    state.dragging = false;
     if (!el("help").hidden) { el("help").hidden = true; return; }
     if (!el("composer").hidden) { hideComposer(); return; }
     if (state.selection) { state.selection = null; paintSelection(); return; }
@@ -2502,7 +2617,8 @@ def render_page(token: str, mode: str = "diff", page: int = 0) -> bytes:
         },
         separators=(",", ":"),
     )
-    return PAGE_TEMPLATE.replace("__HTML_REVIEW_BOOT__", boot).encode("utf-8")
+    logic = (Path(__file__).resolve().parents[1] / "assets" / "review-diff.js").read_text(encoding="utf-8")
+    return PAGE_TEMPLATE.replace("__HTML_REVIEW_BOOT__", boot).replace("__HTML_DIFF_VIEW__", logic).encode("utf-8")
 
 
 # --------------------------------------------------------------------------
