@@ -665,11 +665,7 @@ PAGE_TEMPLATE = """<!doctype html>
   color-scheme: dark;
   --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   --serif:"Source Serif 4",Georgia,"Iowan Old Style","Times New Roman",serif;
-  /* The code font is a Nerd Font mono when the machine has one, so code and
-     file icons come from the same family. The bundled JetBrains Mono stays as
-     the fallback, which keeps the page correct on a machine with none of them. */
-  --mono:"FiraCode Nerd Font Mono","JetBrains Mono NF","Hack Nerd Font Mono",
-         "JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,monospace;
   --nerd:"FiraCode Nerd Font Mono","JetBrains Mono NF","Hack Nerd Font Mono",
          "JetBrains Mono","Nerd Font",ui-monospace,monospace;
   --bg:#0b0d12; --surface:#12151d; --raised:#181c26; --sunken:#0e1118;
@@ -717,7 +713,7 @@ body.document .md code,body.document .blk.code pre code{
   font-variant-ligatures:normal; font-feature-settings:"liga" 1,"calt" 1}
 button{
   font:inherit; color:inherit; background:var(--raised); border:1px solid var(--line);
-  border-radius:var(--r-sm); padding:6px 12px; cursor:pointer; white-space:nowrap;
+  border-radius:var(--r-sm); padding:8px 14px; cursor:pointer; white-space:nowrap;
   transition:background .12s ease,border-color .12s ease,color .12s ease;
 }
 button:hover:not(:disabled){border-color:var(--accent); color:var(--accent)}
@@ -730,15 +726,15 @@ button.primary:hover:not(:disabled){filter:brightness(1.08); color:var(--accent-
 button.danger{color:var(--danger); border-color:transparent; background:transparent}
 button.danger:hover:not(:disabled){border-color:var(--danger); color:var(--danger)}
 button.link{border:0; background:none; padding:2px 4px; color:var(--accent); text-decoration:underline}
-button.tiny{padding:3px 8px; font-size:11.5px; border-radius:var(--r-sm)}
+button.tiny{padding:5px 10px; font-size:13px; border-radius:var(--r-sm)}
 button.ghost{background:transparent}
 textarea,input{
   font:inherit; width:100%; background:var(--sunken); color:var(--fg);
-  border:1px solid var(--line); border-radius:var(--r-sm); padding:7px 9px; resize:vertical;
+  border:1px solid var(--line); border-radius:var(--r-sm); padding:9px 11px; resize:vertical;
 }
 textarea::placeholder,input::placeholder{color:var(--faint)}
 ul{list-style:none; margin:0; padding:0}
-h2{font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; margin:0}
+h2{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); font-weight:600; margin:0}
 
 /* ---------------------------------------------------------------- header */
 header{
@@ -762,22 +758,22 @@ header .title{display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-wi
 #review-brief summary{cursor:pointer; color:var(--muted); font-size:13px; width:fit-content}
 #criterion{max-width:90ch; margin-top:10px; white-space:pre-wrap; overflow-wrap:anywhere; font-weight:400; line-height:1.65}
 header .meta{color:var(--muted); font-size:13px; margin-top:5px; display:flex; gap:8px; align-items:center; flex-wrap:wrap}
-header .meta code{font-size:11.5px; color:var(--faint)}
+header .meta code{font-size:13px; color:var(--faint)}
 .chips{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
 .chip{
   display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:999px;
-  border:1px solid var(--line); background:var(--sunken); font-size:11.5px; color:var(--muted);
+  border:1px solid var(--line); background:var(--sunken); font-size:13px; color:var(--muted);
   font-variant-numeric:tabular-nums;
 }
 .chip b{color:var(--fg); font-weight:600}
 .chip.add b{color:var(--add-fg)} .chip.del b{color:var(--del-fg)}
-.chip.repo{font-family:var(--mono); font-size:11px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.chip.repo{font-family:var(--mono); font-size:13px; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .chev{
   border:0; background:none; padding:0 2px; width:16px; flex:none;
   color:var(--muted); font-size:11px; line-height:1;
 }
 .chev:hover{color:var(--accent); border:0}
-.hint-list{margin:8px 0 0; padding:0 0 0 2px; list-style:none; color:var(--faint); font-size:12px; line-height:1.7}
+.hint-list{margin:8px 0 0; padding:0 0 0 2px; list-style:none; color:var(--faint); font-size:13px; line-height:1.7}
 .hint-list kbd{margin-left:6px}
 
 /* --------------------------------------------------------------- toolbar */
@@ -785,13 +781,13 @@ header .meta code{font-size:11.5px; color:var(--faint)}
   display:flex; gap:10px; align-items:center; padding:8px 18px;
   border-bottom:1px solid var(--line); background:var(--surface);
 }
-#toolbar input{max-width:280px; font-size:12.5px; padding:5px 9px}
+#toolbar input{max-width:280px; font-size:13px; padding:7px 11px}
 #toolbar .spacer{flex:1}
-#toolbar .hint{color:var(--faint); font-size:11.5px}
+#toolbar .hint{color:var(--faint); font-size:13px}
 #files li{gap:2px}
 .fname{display:flex; align-items:center; gap:7px; min-width:0}
 .fname .path{overflow-wrap:anywhere}
-.path .directory{color:var(--muted); font-size:11.5px; font-weight:400}
+.path .directory{color:var(--muted); font-size:13px; font-weight:400}
 .path strong{color:var(--fg); font-weight:650}
 .fname .path,.file > h3 > .path,#current-file-path .path{display:flex; flex-direction:column-reverse; gap:2px}
 /* File icons are Nerd Font private-use glyphs: the patched font is already on
@@ -820,21 +816,21 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
 #review-pane{display:flex; flex-direction:column; min-height:0; min-width:0}
 #review-pane #diff{flex:1}
 #current-file{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--raised)}
-#current-file-path{min-width:0; flex:1 1 180px; overflow:auto; white-space:nowrap; font:400 12.5px/1.5 var(--mono)}
-#current-file-position{flex:none; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
+#current-file-path{min-width:0; flex:1 1 180px; overflow:auto; white-space:nowrap; font:400 13px/1.5 var(--mono)}
+#current-file-position{flex:none; color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums}
 #change-navigation{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
-#change-position{color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
+#change-position{color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums}
 body.document #current-file{display:none}
 
 /* ------------------------------------------------------------- file list */
 #files li{
-  padding:7px 12px; border-bottom:1px solid var(--line-soft); cursor:pointer;
+  padding:9px 12px; border-bottom:1px solid var(--line-soft); cursor:pointer;
   display:flex; flex-direction:column; gap:3px; border-left:2px solid transparent;
 }
 #files li:hover{background:var(--raised)}
 #files li.active{border-left-color:var(--accent); background:var(--accent-soft)}
-#files li .path{font-family:var(--mono); font-size:12.5px; word-break:break-all; line-height:1.35}
-#files li .counts{color:var(--muted); font-size:12px; display:flex; gap:6px; align-items:center; font-variant-numeric:tabular-nums}
+#files li .path{font-family:var(--mono); font-size:13px; word-break:break-all; line-height:1.5}
+#files li .counts{color:var(--muted); font-size:13px; display:flex; gap:6px; align-items:center; font-variant-numeric:tabular-nums}
 #files li .dot{width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none}
 #files li .dot.add{background:var(--add-fg)} #files li .dot.del{background:var(--del-fg)}
 #files li .open{color:var(--warn-fg); font-weight:600}
@@ -847,24 +843,24 @@ body.document #current-file{display:none}
 .file > h3{
   margin:0; padding:9px 12px; display:flex; gap:9px;
   align-items:center; flex-wrap:wrap; background:var(--raised);
-  border-bottom:1px solid var(--line); border-radius:var(--r-md) var(--r-md) 0 0; font:600 12.5px/1.4 var(--mono);
+  border-bottom:1px solid var(--line); border-radius:var(--r-md) var(--r-md) 0 0; font:600 13px/1.5 var(--mono);
 }
-.file > h3 .counts{margin-left:auto; color:var(--muted); font:11.5px/1 var(--sans); font-variant-numeric:tabular-nums}
+.file > h3 .counts{margin-left:auto; color:var(--muted); font:13px/1.5 var(--sans); font-variant-numeric:tabular-nums}
 .file > h3 > span{overflow-wrap:anywhere; min-width:0}
 .badge{
-  font:600 10px/1.7 var(--sans); text-transform:uppercase; letter-spacing:.06em;
+  font:600 13px/1.7 var(--sans); text-transform:uppercase; letter-spacing:.06em;
   padding:0 7px; border-radius:999px; border:1px solid var(--line); color:var(--muted);
 }
 .badge.add{color:var(--add-fg); border-color:var(--add-line); background:var(--add-bg)}
 .badge.del{color:var(--del-fg); border-color:var(--del-line); background:var(--del-bg)}
-.rows{display:grid; grid-template-columns:minmax(0,1fr); font:14px/1.66 var(--mono); font-variant-numeric:tabular-nums}
+.rows{display:grid; grid-template-columns:minmax(0,1fr); font:400 15px/26px var(--mono); font-variant-numeric:tabular-nums}
 .row{
   display:grid; grid-template-columns:52px 52px 18px minmax(0,1fr);
   border-left:2px solid transparent; scroll-margin-top:44px;
 }
 .row .ln{
   color:var(--faint); text-align:right; padding:0 8px; user-select:none;
-  font-size:12.5px; cursor:pointer; font-variant-numeric:tabular-nums;
+  font-size:13px; cursor:pointer; font-variant-numeric:tabular-nums;
 }
 .row .ln:hover{color:var(--accent)}
 .row .sign{text-align:center; user-select:none; color:var(--faint)}
@@ -873,7 +869,7 @@ body.document #current-file{display:none}
 .row.add .code,.row.add .sign{color:var(--add-fg)}
 .row.remove{background:var(--del-bg); border-left-color:var(--del-line)}
 .row.remove .code,.row.remove .sign{color:var(--del-fg)}
-.row.meta{background:var(--sunken); color:var(--muted); font-size:11.5px}
+.row.meta{background:var(--sunken); color:var(--muted); font-size:13px}
 .row.meta .code{padding:3px 10px; font-style:italic}
 .row.sel{background:var(--accent-soft); border-left-color:var(--accent)}
 .row.sel .code,.row.sel .sign,.row.sel .ln{color:var(--fg)}
@@ -888,8 +884,8 @@ body.document #current-file{display:none}
 .file.split .rows > .row{grid-column:1 / -1}
 .split-row > .row{grid-template-columns:52px 18px minmax(0,1fr)}
 .split-row > .row:first-child{border-right:1px solid var(--line)}
-.split-row > .blank{background:var(--sunken); min-height:1.66em}
-.split-labels span{position:sticky; top:0; z-index:2; padding:6px 12px; background:var(--raised); color:var(--muted); font:600 11px/1.5 var(--sans)}
+.split-row > .blank{background:var(--sunken); min-height:26px}
+.split-labels span{position:sticky; top:0; z-index:2; padding:6px 12px; background:var(--raised); color:var(--muted); font:600 13px/1.5 var(--sans)}
 .file.nowrap{min-width:max-content}
 .file.nowrap .rows{grid-template-columns:minmax(max-content,1fr)}
 .file.split.nowrap .rows{grid-template-columns:repeat(2,minmax(max-content,1fr))}
@@ -904,10 +900,10 @@ body.document .diff-view-controls,body.document #wrap-lines{display:none}
 .thread{padding:10px 12px; border-bottom:1px solid var(--line-soft); border-left:2px solid var(--warn-fg); cursor:pointer}
 .thread:hover{background:var(--raised)}
 .thread.resolved{opacity:.62; border-left-color:var(--accent)}
-.thread .where{font:11px/1.45 var(--mono); color:var(--muted); word-break:break-all}
+.thread .where{font:13px/1.5 var(--mono); color:var(--muted); word-break:break-all}
 .thread .text{margin:5px 0 8px; white-space:pre-wrap; font-size:13.5px; line-height:1.55}
 .thread .acts{display:flex; gap:6px; align-items:center}
-.group{padding:9px 12px 4px; font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:600}
+.group{padding:9px 12px 4px; font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:600}
 .empty{padding:14px 12px; color:var(--faint); font-size:13.5px; line-height:1.55}
 
 /* -------------------------------------------------------------- composer */
@@ -916,7 +912,7 @@ body.document .diff-view-controls,body.document #wrap-lines{display:none}
   background:var(--raised); border:1px solid var(--accent); border-radius:var(--r-lg);
   padding:12px; box-shadow:var(--shadow); z-index:20;
 }
-#composer .where{font:11px/1.45 var(--mono); color:var(--muted); margin-bottom:7px; word-break:break-all}
+#composer .where{font:13px/1.5 var(--mono); color:var(--muted); margin-bottom:7px; word-break:break-all}
 #composer .acts{display:flex; gap:8px; justify-content:flex-end; margin-top:9px}
 
 /* ---------------------------------------------------------------- footer */
@@ -924,20 +920,20 @@ footer{
   border-top:1px solid var(--line); background:var(--surface); padding:10px 18px 12px;
   display:grid; grid-template-columns:minmax(260px,1fr) auto; gap:10px 18px; align-items:end;
 }
-footer label{display:block; color:var(--muted); font-size:11px; text-transform:uppercase;
+footer label{display:block; color:var(--muted); font-size:13px; text-transform:uppercase;
   letter-spacing:.07em; font-weight:600; margin-bottom:5px}
 footer .actions{display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end}
 #counts{color:var(--muted); font-size:13px; margin-right:6px; font-variant-numeric:tabular-nums}
 #message{grid-column:1 / -1; min-height:18px; font-size:13.5px; color:var(--muted)}
 #message.warn{color:var(--warn-fg)} #message.error{color:var(--danger); font-weight:600}
 kbd{
-  font:10.5px/1.6 var(--mono); border:1px solid var(--line); border-bottom-width:2px;
+  font:13px/1.6 var(--mono); border:1px solid var(--line); border-bottom-width:2px;
   border-radius:4px; padding:0 4px; margin-left:6px; opacity:.7; color:var(--muted);
 }
 button.primary kbd{opacity:.85}
 #banner{
   grid-column:1 / -1; background:var(--warn-bg); color:var(--warn-fg); border:1px solid var(--warn-fg);
-  border-radius:var(--r-sm); padding:6px 10px; font-size:12.5px;
+  border-radius:var(--r-sm); padding:6px 10px; font-size:13px;
   display:flex; gap:12px; align-items:center; justify-content:space-between;
 }
 
@@ -962,7 +958,7 @@ button.primary kbd{opacity:.85}
 #help .card{background:var(--raised); border:1px solid var(--line); border-radius:var(--r-lg);
   padding:20px 24px; box-shadow:var(--shadow); min-width:380px}
 #help h2{color:var(--fg); font-size:15px; text-transform:none; letter-spacing:0; margin-bottom:12px}
-#help table{border-collapse:collapse; font-size:12.5px}
+#help table{border-collapse:collapse; font-size:13px}
 #help td{padding:4px 0} #help td:first-child{width:110px}
 #help kbd{margin:0}
 /* ---------------------------------------------------------- document mode */
@@ -981,7 +977,7 @@ body.document .blk.threaded.resolved-thread{border-left-color:var(--accent)}
 body.document .blk.flash{animation:flash .9s ease}
 body.document .at{
   position:absolute; left:-46px; width:40px; text-align:right; color:var(--faint);
-  font:11.5px/1.7 var(--mono); user-select:none; cursor:pointer; opacity:0;
+  font:13px/1.7 var(--mono); user-select:none; cursor:pointer; opacity:0;
   transition:opacity .12s ease;
 }
 body.document .blk:hover .at,body.document .blk.sel .at,body.document .blk.threaded .at{opacity:1}
@@ -1016,10 +1012,10 @@ body.document .md table{
 body.document .md th,body.document .md td{border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top}
 body.document .md th{background:var(--raised); font-weight:600; color:var(--muted)}
 body.document .md tbody tr:nth-child(even) td{background:var(--sunken)}
-body.document .md code{font-family:var(--mono); font-size:.9em; font-weight:500; background:var(--sunken);
+body.document .md code{font-family:var(--mono); font-size:.9em; font-weight:400; background:var(--sunken);
   padding:.12em .38em; border-radius:4px; border:1px solid var(--line-soft)}
 body.document .md pre{background:var(--sunken); border:1px solid var(--line); border-radius:8px}
-body.document .md pre code{background:none; border:0; padding:0; font-size:15px; font-weight:500; letter-spacing:0}
+body.document .md pre code{background:none; border:0; padding:0; font-size:15px; line-height:26px; font-weight:400; letter-spacing:0}
 body.document .blk.blank{height:10px}
 body.document .blk.rule .bd{color:var(--line); letter-spacing:.2em}
 body.document .blk.q .bd{border-left:2px solid var(--line); padding:2px 0 2px 14px; color:var(--muted); font-style:italic}
@@ -1033,9 +1029,9 @@ body.document .blk.tb .bd tr:first-child td{background:var(--raised); font-weigh
 body.document .blk.tb .bd tr:nth-child(even):not(:first-child) td{background:var(--sunken)}
 body.document .blk.code{margin:0 0 16px}
 body.document .blk.code pre{margin:0; padding:12px 14px; background:var(--sunken); border:1px solid var(--line);
-  border-radius:var(--r-sm); overflow-x:auto; font:15px/1.68 var(--mono); font-weight:500;
+  border-radius:var(--r-sm); overflow-x:auto; font:400 15px/26px var(--mono);
   letter-spacing:.005em; white-space:pre}
-body.document .blk.code .lang{display:inline-block; margin-bottom:4px; font:10px/1.6 var(--sans);
+body.document .blk.code .lang{display:inline-block; margin-bottom:4px; font:13px/1.6 var(--sans);
   text-transform:uppercase; letter-spacing:.08em; color:var(--faint)}
 body.document .doc code{font-family:var(--mono); font-size:.9em; background:var(--sunken); padding:1px 5px;
   border-radius:4px; color:var(--fg)}
@@ -1044,7 +1040,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
   border-radius:8px; overflow-x:auto; text-align:center}
 .diagram.drawn svg{max-width:100%; height:auto}
 .diagram.undrawn{white-space:pre; text-align:left; font-family:var(--mono); font-size:12.5px; color:var(--muted)}
-.docpath{font-family:var(--mono); font-size:12px; color:var(--muted); margin-top:6px; word-break:break-all}
+.docpath{font-family:var(--mono); font-size:13px; color:var(--muted); margin-top:6px; word-break:break-all}
 /* the outline: every heading, with the one you are reading marked */
 #outline{padding:10px 8px 20px; border-right:1px solid var(--line); background:var(--surface); overflow:auto; min-height:0}
 #outline .group{padding:6px 8px 3px}
@@ -1052,8 +1048,8 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
   font-size:13.5px; line-height:1.4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 #outline a:hover{background:var(--raised); color:var(--fg)}
 #outline a.lv1{font-weight:700; color:var(--fg)}
-#outline a.lv2{padding-left:16px} #outline a.lv3{padding-left:26px; font-size:12px}
-#outline a.lv4,#outline a.lv5,#outline a.lv6{padding-left:36px; font-size:11.5px; color:var(--faint)}
+#outline a.lv2{padding-left:16px} #outline a.lv3{padding-left:26px; font-size:13px}
+#outline a.lv4,#outline a.lv5,#outline a.lv6{padding-left:36px; font-size:13px; color:var(--faint)}
 #outline a.here{background:var(--accent-soft); color:var(--accent)}
 /* Code tokens. One palette, for the engine the page actually uses, tuned to
    the same dark background as the diff so highlighted and plain code sit
