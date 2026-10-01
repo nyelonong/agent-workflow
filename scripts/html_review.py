@@ -757,6 +757,7 @@ header h1{
   min-width:0; overflow-wrap:anywhere;
 }
 header .title{display:flex; align-items:center; gap:12px; flex-wrap:wrap; min-width:0}
+#task-summary{margin:8px 0; max-width:90ch; color:var(--fg); overflow-wrap:anywhere; line-height:1.5}
 #review-brief{margin-top:10px}
 #review-brief summary{cursor:pointer; color:var(--muted); font-size:13px; width:fit-content}
 #criterion{max-width:90ch; margin-top:10px; white-space:pre-wrap; overflow-wrap:anywhere; font-weight:400; line-height:1.65}
@@ -790,6 +791,9 @@ header .meta code{font-size:11.5px; color:var(--faint)}
 #files li{gap:2px}
 .fname{display:flex; align-items:center; gap:7px; min-width:0}
 .fname .path{overflow-wrap:anywhere}
+.path .directory{color:var(--muted); font-size:11.5px; font-weight:400}
+.path strong{color:var(--fg); font-weight:650}
+.fname .path,.file > h3 > .path,#current-file-path .path{display:flex; flex-direction:column-reverse; gap:2px}
 /* File icons are Nerd Font private-use glyphs: the patched font is already on
    this machine, and --nerd falls back to the bundled code font if it is not. */
 .ficon{font-family:var(--nerd); font-size:13px; line-height:1; flex:none; color:var(--faint)}
@@ -800,6 +804,8 @@ header .meta code{font-size:11.5px; color:var(--faint)}
 
 /* ------------------------------------------------------------------ main */
 main{display:grid; grid-template-columns:264px minmax(0,1fr) 340px; min-height:0}
+body.comments-collapsed main{grid-template-columns:264px minmax(0,1fr)}
+body.document.comments-collapsed main{grid-template-columns:232px minmax(0,1fr)}
 aside{overflow:auto; min-height:0; background:var(--surface)}
 #files-panel{border-right:1px solid var(--line)}
 #threads-panel{border-left:1px solid var(--line)}
@@ -813,7 +819,7 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
 #review-pane{display:flex; flex-direction:column; min-height:0; min-width:0}
 #review-pane #diff{flex:1}
 #current-file{display:flex; gap:12px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--raised)}
-#current-file-path{min-width:0; flex:1; overflow:auto; white-space:nowrap; font:600 12.5px/1.5 var(--mono)}
+#current-file-path{min-width:0; flex:1; overflow:auto; white-space:nowrap; font:400 12.5px/1.5 var(--mono)}
 #current-file-position{flex:none; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
 body.document #current-file{display:none}
 
@@ -1045,6 +1051,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
 .hljs-link{text-decoration:underline}
 @media(max-width:1100px){
   main,body.document main{grid-template-columns:minmax(120px,19%) minmax(0,1fr) minmax(160px,23%)}
+  body.comments-collapsed main,body.document.comments-collapsed main{grid-template-columns:minmax(120px,19%) minmax(0,1fr)}
   #toolbar{flex-wrap:wrap}
   #toolbar .hint{display:none}
   footer{grid-template-columns:minmax(0,1fr)}
@@ -1065,6 +1072,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
     </div>
     <button id="help-open" class="tiny ghost" title="Keyboard shortcuts">? shortcuts</button>
   </div>
+  <p id="task-summary"></p>
   <div class="meta"><code id="review-id"></code></div>
   <ul id="repos"></ul>
   <details id="review-brief">
@@ -1076,6 +1084,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
   <input id="file-filter" type="search" placeholder="Filter files&hellip;" aria-label="Filter files by path" spellcheck="false">
   <button id="expand-all" class="tiny">Expand all</button>
   <button id="collapse-all" class="tiny">Collapse all</button>
+  <button id="comments-toggle" class="tiny" aria-controls="threads-panel" aria-expanded="true">Hide comments (0)</button>
   <span class="spacer"></span>
   <span class="hint">Click a line or drag a range to comment &middot; <kbd>?</kbd> for shortcuts</span>
 </div>
@@ -1184,6 +1193,7 @@ const state = {
   data: null,
   files: [],
   currentFile: -1,
+  commentsCollapsed: false,
   threads: [],
   nextThreadId: 1,
   armed: false,
@@ -1313,7 +1323,7 @@ function fileIcon(file) {
 function render() {
   if (boot.mode === "document") return renderDocument();
   const data = state.data;
-  el("criterion").textContent = data.criterion;
+  renderBrief(data.criterion);
   el("review-id").textContent = "review " + data.review_id.slice(0, 12);
   el("chip-files").innerHTML = "<b>" + data.totals.files + "</b> file" + (data.totals.files === 1 ? "" : "s");
   el("chip-add").innerHTML = "<b>+" + data.totals.added + "</b> added";
@@ -1347,6 +1357,33 @@ function render() {
   renderFooter();
 }
 
+function reviewSummary(criterion) {
+  const firstLine = criterion.split(NEWLINE).find((line) => line.trim()) || "";
+  const compact = firstLine.trim().replace(/\\s+/g, " ");
+  return compact.length > 180 ? compact.slice(0, 177).trimEnd() + "\u2026" : compact;
+}
+
+function renderBrief(criterion) {
+  el("task-summary").textContent = reviewSummary(criterion);
+  el("criterion").textContent = criterion;
+}
+
+function pathLabel(path) {
+  const label = document.createElement("span");
+  label.className = "path";
+  const separator = path.lastIndexOf("/");
+  if (separator >= 0) {
+    const directory = document.createElement("span");
+    directory.className = "directory";
+    directory.textContent = path.slice(0, separator + 1);
+    label.appendChild(directory);
+  }
+  const name = document.createElement("strong");
+  name.textContent = path.slice(separator + 1);
+  label.appendChild(name);
+  return label;
+}
+
 function renderFiles() {
   const list = el("files");
   list.textContent = "";
@@ -1376,9 +1413,7 @@ function renderFiles() {
     const name = document.createElement("span");
     name.className = "fname";
     name.appendChild(fileIcon(file));
-    const path = document.createElement("span");
-    path.className = "path";
-    path.textContent = file.path;
+    const path = pathLabel(file.path);
     name.appendChild(path);
     const counts = document.createElement("span");
     counts.className = "counts";
@@ -1415,7 +1450,12 @@ function trackFile() {
   state.currentFile = current ? Number(current.dataset.file) : -1;
   el("current-file").hidden = !current;
   const file = state.files[state.currentFile];
-  el("current-file-path").textContent = file ? file.path : "";
+  const label = el("current-file-path");
+  if (label.dataset.file !== String(state.currentFile)) {
+    label.replaceChildren(...(file ? [pathLabel(file.path)] : []));
+    label.dataset.file = String(state.currentFile);
+    label.scrollLeft = 0;
+  }
   el("current-file-path").title = file ? file.repository + "/" + file.path : "";
   el("current-file-position").textContent = current ? "File " + (blocks.indexOf(current) + 1) + " of " + blocks.length : "";
   for (const item of el("files").children) {
@@ -1574,8 +1614,7 @@ function renderDiff() {
       if (open) state.expanded.delete(fileIndex); else state.expanded.add(fileIndex);
       renderDiff();
     });
-    const path = document.createElement("span");
-    path.textContent = file.path;
+    const path = pathLabel(file.path);
     const badge = document.createElement("span");
     badge.className = "badge " + statusClass(file.status);
     badge.textContent = file.status;
@@ -1663,7 +1702,7 @@ function renderDocument() {
   const data = state.data;
   document.body.classList.add("document");
   el("review-title").textContent = "Review document";
-  el("criterion").textContent = data.criterion;
+  renderBrief(data.criterion);
   el("review-id").textContent = data.name || data.path;
   const line = document.createElement("div");
   line.className = "docpath";
@@ -2000,6 +2039,7 @@ function threadLocation(target) {
 }
 
 function jumpToThread(thread) {
+  setCommentsCollapsed(false);
   if (thread.target.scope !== "line") return;
   if (boot.mode === "document") {
     const wanted = thread.target.start_line;
@@ -2026,6 +2066,7 @@ function jumpToThread(thread) {
 }
 
 function renderThreads() {
+  renderCommentsToggle();
   const list = el("threads");
   list.textContent = "";
   if (!state.threads.length) {
@@ -2077,6 +2118,21 @@ function renderThreads() {
   };
   if (open.length) { addGroup("To fix (" + open.length + ")"); open.forEach(addThread); }
   if (done.length) { addGroup("Resolved (" + done.length + ")"); done.forEach(addThread); }
+}
+
+function renderCommentsToggle() {
+  const toggle = el("comments-toggle");
+  toggle.textContent = (state.commentsCollapsed ? "Show" : "Hide") + " comments (" + state.threads.length + ")";
+  toggle.setAttribute("aria-expanded", state.commentsCollapsed ? "false" : "true");
+}
+
+function setCommentsCollapsed(collapsed) {
+  state.commentsCollapsed = collapsed;
+  document.body.classList.toggle("comments-collapsed", collapsed);
+  el("threads-panel").hidden = collapsed;
+  renderCommentsToggle();
+  trackOutline();
+  trackFile();
 }
 
 function renderFooter() {
@@ -2322,6 +2378,7 @@ el("collapse-all").addEventListener("click", () => {
   state.expanded.clear();
   renderDiff();
 });
+el("comments-toggle").addEventListener("click", () => setCommentsCollapsed(!state.commentsCollapsed));
 el("next-thread").addEventListener("click", () => cycleThread(1));
 el("help-open").addEventListener("click", () => { el("help").hidden = false; });
 el("help").addEventListener("click", () => { el("help").hidden = true; });
