@@ -815,6 +815,7 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
   background:var(--surface);
 }
 #diff{overflow:auto; min-height:0; padding:14px 18px; scroll-behavior:smooth}
+#diff:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 #diff::after{content:""; display:block; height:45vh}
 #review-pane{display:flex; flex-direction:column; min-height:0; min-width:0}
 #review-pane #diff{flex:1}
@@ -839,12 +840,12 @@ body.document #current-file{display:none}
 /* ----------------------------------------------------------------- files */
 .file{
   margin:0 0 16px; border:1px solid var(--line); border-radius:var(--r-md);
-  overflow:hidden; background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.18);
+  overflow:visible; background:var(--surface); box-shadow:0 1px 2px rgba(0,0,0,.18);
 }
 .file > h3{
   margin:0; padding:9px 12px; display:flex; gap:9px;
   align-items:center; flex-wrap:wrap; background:var(--raised);
-  border-bottom:1px solid var(--line); font:600 12.5px/1.4 var(--mono);
+  border-bottom:1px solid var(--line); border-radius:var(--r-md) var(--r-md) 0 0; font:600 12.5px/1.4 var(--mono);
 }
 .file > h3 .counts{margin-left:auto; color:var(--muted); font:11.5px/1 var(--sans); font-variant-numeric:tabular-nums}
 .file > h3 > span{overflow-wrap:anywhere; min-width:0}
@@ -854,7 +855,7 @@ body.document #current-file{display:none}
 }
 .badge.add{color:var(--add-fg); border-color:var(--add-line); background:var(--add-bg)}
 .badge.del{color:var(--del-fg); border-color:var(--del-line); background:var(--del-bg)}
-.rows{font:14px/1.66 var(--mono); font-variant-numeric:tabular-nums}
+.rows{display:grid; grid-template-columns:minmax(0,1fr); font:14px/1.66 var(--mono); font-variant-numeric:tabular-nums}
 .row{
   display:grid; grid-template-columns:52px 52px 18px minmax(0,1fr);
   border-left:2px solid transparent; scroll-margin-top:44px;
@@ -880,14 +881,21 @@ body.document #current-file{display:none}
 .row.flash{animation:flash .9s ease}
 .diff-view-controls{display:flex; gap:3px}
 .diff-view-controls button[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--fg)}
-.file.split .rows{overflow-x:auto}
-.split-row,.split-labels{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); min-width:560px}
+.file.split .rows{grid-template-columns:repeat(2,minmax(0,1fr)); min-width:560px}
+.split-row,.split-labels{display:contents}
+.file.split .rows > .row{grid-column:1 / -1}
 .split-row > .row{grid-template-columns:52px 18px minmax(0,1fr)}
 .split-row > .row:first-child{border-right:1px solid var(--line)}
 .split-row > .blank{background:var(--sunken); min-height:1.66em}
-.split-labels{background:var(--raised); color:var(--muted); font:600 11px/1.5 var(--sans)}
-.split-labels span{padding:6px 12px}
-body.document .diff-view-controls{display:none}
+.split-labels span{position:sticky; top:0; z-index:2; padding:6px 12px; background:var(--raised); color:var(--muted); font:600 11px/1.5 var(--sans)}
+.file.nowrap{min-width:max-content}
+.file.nowrap .rows{grid-template-columns:minmax(max-content,1fr)}
+.file.split.nowrap .rows{grid-template-columns:repeat(2,minmax(max-content,1fr))}
+.file.nowrap .code{white-space:pre; overflow-wrap:normal}
+.word-change{color:inherit; border-radius:2px}
+.row.add .word-change{background:var(--add-line)}
+.row.remove .word-change{background:var(--del-line)}
+body.document .diff-view-controls,body.document #wrap-lines{display:none}
 @keyframes flash{from{background:var(--accent-soft)} to{background:transparent}}
 
 /* --------------------------------------------------------------- threads */
@@ -1098,6 +1106,7 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
     <button id="view-inline" class="tiny" aria-pressed="true">Inline</button>
     <button id="view-split" class="tiny" aria-pressed="false">Side-by-side</button>
   </div>
+  <button id="wrap-lines" class="tiny" aria-pressed="true">Wrap lines</button>
   <button id="comments-toggle" class="tiny" aria-controls="threads-panel" aria-expanded="true">Hide comments (0)</button>
   <span class="spacer"></span>
   <span class="hint">Click a line or drag a range to comment &middot; <kbd>?</kbd> for shortcuts</span>
@@ -1171,6 +1180,11 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
       <tr><td><kbd>&#8984;C</kbd></td><td>Cancel the review</td></tr>
       <tr><td><kbd>J</kbd> <kbd>K</kbd></td><td>Next / previous file</td></tr>
       <tr><td><kbd>N</kbd></td><td>Jump to the next comment</td></tr>
+      <tr><td><kbd>Tab</kbd></td><td>Focus the code pane for line selection</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Select the previous / next source line in the focused code pane</td></tr>
+      <tr><td><kbd>Shift ↑</kbd> <kbd>Shift ↓</kbd></td><td>Extend / shrink a continuous same-side range</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd></td><td>Choose Before / After when that source side exists</td></tr>
+      <tr><td><kbd>Enter</kbd></td><td>Write a comment on the selected lines</td></tr>
       <tr><td><kbd>/</kbd></td><td>Filter files</td></tr>
       <tr><td><kbd>?</kbd></td><td>This panel</td></tr>
       <tr><td><kbd>Esc</kbd></td><td>Close a box, or clear the selection</td></tr>
@@ -1212,6 +1226,7 @@ const state = {
   currentFile: -1,
   commentsCollapsed: false,
   diffView: "inline",
+  wrapLines: true,
   dragging: false,
   threads: [],
   nextThreadId: 1,
@@ -1570,7 +1585,41 @@ function lineTokens(file, line, side) {
   return null;
 }
 
-function makeRow(fileIndex, line, index) {
+function markCodeChanges(code, ranges) {
+  const nodes = [];
+  const visit = (parent) => {
+    for (const child of parent.childNodes) {
+      if (child.nodeType === 3) nodes.push(child);
+      else visit(child);
+    }
+  };
+  visit(code);
+  let offset = 0;
+  for (const node of nodes) {
+    const text = node.data;
+    const end = offset + text.length;
+    const pieces = [];
+    let cursor = 0;
+    for (const [start, stop] of ranges) {
+      const left = Math.max(offset, start);
+      const right = Math.min(end, stop);
+      if (left >= right) continue;
+      if (left - offset > cursor) pieces.push(document.createTextNode(text.slice(cursor, left - offset)));
+      const mark = document.createElement("mark");
+      mark.className = "word-change";
+      mark.textContent = text.slice(left - offset, right - offset);
+      pieces.push(mark);
+      cursor = right - offset;
+    }
+    if (pieces.length) {
+      if (cursor < text.length) pieces.push(document.createTextNode(text.slice(cursor)));
+      node.replaceWith(...pieces);
+    }
+    offset = end;
+  }
+}
+
+function makeRow(fileIndex, line, index, changes) {
   const row = document.createElement("div");
   row.className = "row " + line.type;
   row.dataset.file = String(fileIndex);
@@ -1596,6 +1645,7 @@ function makeRow(fileIndex, line, index) {
   } else {
     code.textContent = line.text === "" ? " " : line.text;
   }
+  if (changes && changes.length && code.textContent === line.text) markCodeChanges(code, changes);
   row.append(oldNumber, newNumber, sign, code);
   if (line.type === "context" || line.type === "add" || line.type === "remove") {
     row.addEventListener("mousedown", (event) => onRowPress(event, fileIndex, index, line));
@@ -1603,7 +1653,7 @@ function makeRow(fileIndex, line, index) {
   return row;
 }
 
-function makeSideCell(fileIndex, index, side) {
+function makeSideCell(fileIndex, index, side, changes) {
   const row = document.createElement("div");
   if (index === null) {
     row.className = "row blank";
@@ -1628,6 +1678,7 @@ function makeSideCell(fileIndex, index, side) {
   const tokens = lineTokens(file, line.new_line, side === "old" && line.type === "remove" ? "old" : "new");
   if (tokens !== null && tokens !== undefined) code.innerHTML = tokens || " ";
   else code.textContent = line.text || " ";
+  if (changes && changes.length && code.textContent === line.text) markCodeChanges(code, changes);
   row.append(number, sign, code);
   row.addEventListener("mousedown", (event) => onRowPress(event, fileIndex, index, line, side));
   return row;
@@ -1638,34 +1689,102 @@ function diffRow(fileIndex, index, side) {
   return el("diff").querySelector('[data-file="' + fileIndex + '"][data-row="' + index + '"]' + suffix);
 }
 
-function setDiffView(view) {
-  if (boot.mode === "document" || state.diffView === view) return;
+function readingPosition() {
   const host = el("diff");
   const top = host.getBoundingClientRect().top;
   const current = Array.from(host.querySelectorAll(".row[data-row]")).find(row => {
     const line = state.files[Number(row.dataset.file)].lines[Number(row.dataset.row)];
     return (line.old_line !== null || line.new_line !== null) && row.getBoundingClientRect().bottom > top;
   });
-  const position = current ? {...current.dataset} : null;
+  return current ? {...current.dataset} : null;
+}
+
+function restoreReadingPosition(position) {
+  if (position) {
+    const line = state.files[Number(position.file)].lines[Number(position.row)];
+    const side = position.side || (line.new_line !== null ? "new" : "old");
+    const row = diffRow(Number(position.file), Number(position.row), side);
+    if (row) row.scrollIntoView({block: "start", inline: "nearest"});
+  }
+  trackFile();
+}
+
+function setDiffView(view) {
+  if (boot.mode === "document" || state.diffView === view) return;
+  const position = readingPosition();
   state.diffView = view;
   state.selection = null;
   state.dragging = false;
   el("view-inline").setAttribute("aria-pressed", view === "inline" ? "true" : "false");
   el("view-split").setAttribute("aria-pressed", view === "split" ? "true" : "false");
   renderDiff();
-  if (position) {
-    const line = state.files[Number(position.file)].lines[Number(position.row)];
-    const side = position.side || (line.new_line !== null ? "new" : "old");
-    const row = diffRow(Number(position.file), Number(position.row), side);
-    if (row) row.scrollIntoView({block: "start"});
+  restoreReadingPosition(position);
+}
+
+function setWrapLines(wrap) {
+  if (boot.mode === "document" || state.wrapLines === wrap) return;
+  const position = readingPosition();
+  state.wrapLines = wrap;
+  el("wrap-lines").setAttribute("aria-pressed", wrap ? "true" : "false");
+  for (const file of el("diff").querySelectorAll(".file")) file.classList.toggle("nowrap", !wrap);
+  if (wrap) el("diff").scrollLeft = 0;
+  restoreReadingPosition(position);
+}
+
+function onDiffKey(event) {
+  if (boot.mode === "document" || state.submitted || state.dialog || !el("help").hidden || !el("composer").hidden ||
+      event.target !== el("diff") || event.ctrlKey || event.metaKey || event.altKey ||
+      !["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  const rows = Array.from(el("diff").querySelectorAll(".row[data-row]"));
+  let current = state.selection;
+  const selected = current && diffRow(current.fileIndex, current.to, current.side);
+  const top = el("diff").getBoundingClientRect().top;
+  const available = rows.filter(row => {
+    const line = state.files[Number(row.dataset.file)].lines[Number(row.dataset.row)];
+    return line.old_line !== null || line.new_line !== null;
+  });
+  const anchor = selected || available.find(row => row.getBoundingClientRect().bottom > top) || available[available.length - 1];
+  if (!anchor) return;
+  const fileIndex = Number(anchor.dataset.file);
+  const file = state.files[fileIndex];
+  const limit = boot.maxLines > 0 ? Math.min(file.lines.length, boot.maxLines) : file.lines.length;
+  const lines = file.lines.slice(0, limit);
+  if (!selected) {
+    const index = Number(anchor.dataset.row);
+    const side = event.key === "ArrowLeft" && file.lines[index].old_line !== null ? "old" :
+      file.lines[index].new_line !== null ? "new" : "old";
+    current = {side, from: index, to: index};
+  } else current = ReviewDiff.moveSelection(lines, current, event.key, event.shiftKey);
+  if (!current) return;
+  state.selection = {fileIndex, ...current};
+  state.dragging = false;
+  state.armed = true;
+  paintSelection();
+  const target = selectionTarget();
+  if (target) {
+    diffRow(fileIndex, current.to, current.side).scrollIntoView({block: "nearest", inline: "nearest"});
+    say(target.path + " · " + (target.side === "old" ? "Before" : "After") + " lines " +
+        target.start_line + "–" + target.end_line + ". Enter to comment.");
   }
-  trackFile();
+}
+
+function onSelectionEnter(event) {
+  if (event.key !== "Enter" || !state.selection) return false;
+  if (boot.mode !== "document" && (state.submitted || state.dialog || !el("help").hidden || !el("composer").hidden ||
+      event.target !== el("diff") || event.ctrlKey || event.metaKey || event.altKey)) return false;
+  event.preventDefault();
+  showComposer();
+  return true;
 }
 
 function renderDiff() {
   const host = el("diff");
   host.textContent = "";
   host.className = "";
+  host.tabIndex = 0;
+  host.setAttribute("role", "region");
+  host.setAttribute("aria-label", "Code diff. Arrow keys select lines; Shift extends a range; Enter comments.");
   if (!state.files.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -1679,7 +1798,7 @@ function renderDiff() {
     const fileIndex = state.files.indexOf(file);
     const open = state.expanded.has(fileIndex);
     const block = document.createElement("article");
-    block.className = "file" + (state.diffView === "split" ? " split" : "");
+    block.className = "file" + (state.diffView === "split" ? " split" : "") + (state.wrapLines ? "" : " nowrap");
     block.dataset.file = String(fileIndex);
 
     const heading = document.createElement("h3");
@@ -1712,6 +1831,13 @@ function renderDiff() {
       const rows = document.createElement("div");
       rows.className = "rows";
       const limit = boot.maxLines > 0 ? Math.min(file.lines.length, boot.maxLines) : file.lines.length;
+      const pairs = ReviewDiff.pairLines(file.lines.slice(0, limit));
+      const changes = new Map();
+      for (const pair of pairs) {
+        if (pair.old == null || pair.new == null || file.lines[pair.old].type !== "remove" || file.lines[pair.new].type !== "add") continue;
+        const ranges = ReviewDiff.wordRanges(file.lines[pair.old].text, file.lines[pair.new].text);
+        if (ranges) { changes.set(pair.old, ranges.old); changes.set(pair.new, ranges.new); }
+      }
       if (state.diffView === "split") {
         const labels = document.createElement("div");
         labels.className = "split-labels";
@@ -1721,17 +1847,17 @@ function renderDiff() {
           labels.appendChild(label);
         }
         rows.appendChild(labels);
-        for (const pair of ReviewDiff.pairLines(file.lines.slice(0, limit))) {
+        for (const pair of pairs) {
           if (pair.meta !== undefined) rows.appendChild(makeRow(fileIndex, file.lines[pair.meta], pair.meta));
           else {
             const row = document.createElement("div");
             row.className = "split-row";
-            row.append(makeSideCell(fileIndex, pair.old, "old"), makeSideCell(fileIndex, pair.new, "new"));
+            row.append(makeSideCell(fileIndex, pair.old, "old", changes.get(pair.old)), makeSideCell(fileIndex, pair.new, "new", changes.get(pair.new)));
             rows.appendChild(row);
           }
         }
       } else {
-        for (let row = 0; row < limit; row++) rows.appendChild(makeRow(fileIndex, file.lines[row], row));
+        for (let row = 0; row < limit; row++) rows.appendChild(makeRow(fileIndex, file.lines[row], row, changes.get(row)));
       }
       if (file.binary) {
         const note = document.createElement("div");
@@ -2463,6 +2589,7 @@ el("diff").addEventListener("mouseup", () => {
   showComposer();
 });
 el("diff").addEventListener("mousemove", extendDiffSelection);
+el("diff").addEventListener("keydown", onDiffKey);
 document.addEventListener("mouseup", () => { state.dragging = false; });
 window.addEventListener("blur", () => { state.dragging = false; });
 
@@ -2493,6 +2620,7 @@ el("collapse-all").addEventListener("click", () => {
 el("comments-toggle").addEventListener("click", () => setCommentsCollapsed(!state.commentsCollapsed));
 el("view-inline").addEventListener("click", () => setDiffView("inline"));
 el("view-split").addEventListener("click", () => setDiffView("split"));
+el("wrap-lines").addEventListener("click", () => setWrapLines(!state.wrapLines));
 el("next-thread").addEventListener("click", () => cycleThread(1));
 el("help-open").addEventListener("click", () => { el("help").hidden = false; });
 el("help").addEventListener("click", () => { el("help").hidden = true; });
@@ -2558,7 +2686,7 @@ document.addEventListener("keydown", (event) => {
     if (state.selection) { state.selection = null; paintSelection(); return; }
   }
   if (typing) return;
-  if (event.key === "Enter" && state.selection) { event.preventDefault(); showComposer(); return; }
+  if (onSelectionEnter(event)) return;
   if (event.key === "?") { event.preventDefault(); el("help").hidden = !el("help").hidden; return; }
   // A decision sends an irreversible verdict to the coding agent, so it needs
   // a modifier as well as the right key: a stray letter must never be able to
