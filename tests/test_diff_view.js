@@ -157,6 +157,7 @@ class Element {
     this.style = {};
     this.listeners = {};
     this.hidden = false;
+    this.scrollTop = 0;
     this.classes = new Set();
     this.classList = {
       contains: name => this.classes.has(name),
@@ -169,14 +170,15 @@ class Element {
   set textContent(value) { this.children = []; if (value) this.appendChild(new TextNode(value)); }
   get textContent() { return this.children.map(child => child.textContent).join(''); }
   get childNodes() { return this.children; }
+  get firstElementChild() { return this.children.find(child => child.nodeType === 1) || null; }
   append(...children) { children.forEach(child => this.appendChild(child)); }
   appendChild(child) { child.parent = this; this.children.push(child); }
   replaceChildren(...children) { this.children = []; this.append(...children); }
   setAttribute(name, value) { this.attributes[name] = value; }
   removeAttribute(name) { delete this.attributes[name]; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
-  getBoundingClientRect() { return {top: 0, bottom: 200}; }
-  scrollIntoView() { this.scrolled = true; }
+  getBoundingClientRect() { return this.bounds || {top: 0, bottom: 200}; }
+  scrollIntoView() { this.scrolled = true; if (this.onScroll) this.onScroll(); }
   focus() { this.focused = true; }
   matches(selector) {
     const className = /^\.([\w-]+)/.exec(selector);
@@ -194,7 +196,8 @@ class Element {
 
 function page(lines) {
   const ui = Object.fromEntries(['diff', 'files', 'current-file', 'current-file-path', 'current-file-position',
-    'view-inline', 'view-split', 'wrap-lines', 'file-filter', 'composer', 'composer-text', 'composer-where', 'help', 'message'].map(id => [id, new Element()]));
+    'view-inline', 'view-split', 'wrap-lines', 'file-filter', 'composer', 'composer-text', 'composer-where', 'help', 'message',
+    'previous-change', 'next-change', 'change-position'].map(id => [id, new Element()]));
   ui.composer.hidden = true;
   ui.help.hidden = true;
   const state = {files: [{repository: '/repo', path: 'src/example.js', status: 'modified', added: 1, removed: 1, lines}],
@@ -202,12 +205,13 @@ function page(lines) {
   const context = {state, boot: {mode: 'diff', maxLines: 1500}, ReviewDiff: {pairLines, rangeFor, wordRanges, moveSelection},
     el: id => ui[id], document: {createElement: tag => new Element(tag), createTextNode: text => new TextNode(text), querySelector: selector => ui.diff.querySelector(selector)},
     lineTokens: () => null, fileIcon: () => new Element(), statusClass: () => '',
+    getComputedStyle: node => ({scrollMarginTop: node.dataset.row === undefined ? '0px' : '44px'}),
     hideComposer() {}, setCommentsCollapsed() {}, renderFiles() {},
-    visibleFiles: () => state.filter ? [] : state.files};
+    visibleFiles: () => state.files.filter(file => file.path.includes(state.filter))};
   const functions = ['sideNumber', 'pathLabel', 'makeRow', 'makeSideCell', 'diffRow', 'setDiffView', 'renderDiff',
     'markThreadedRows', 'lineNumberFor', 'paintSelection', 'onRowPress', 'extendDiffSelection', 'selectionTarget',
     'jumpToThread', 'trackFile', 'markCodeChanges', 'readingPosition', 'restoreReadingPosition', 'setWrapLines',
-    'onDiffKey', 'onSelectionEnter', 'showComposer', 'say'];
+    'onDiffKey', 'onSelectionEnter', 'showComposer', 'say', 'collectChangeStops', 'changeElement', 'trackChanges', 'stepChange'];
   vm.createContext(context);
   vm.runInContext(functions.map(pageFunction).join('\n'), context);
   context.renderDiff();
@@ -382,4 +386,132 @@ test('empty cells cannot be selected and unlimited rendering works in both modes
   assert.equal(ui.diff.querySelectorAll('.row[data-row]').length, lines.length);
   context.setDiffView('inline');
   assert.equal(ui.diff.querySelectorAll('.row[data-row]').length, lines.length);
+});
+
+function changePage(layout) {
+  const hunk = text => ({type: 'meta', old_line: null, new_line: null, text});
+  const fixture = page([hunk('@@ -1 +1 @@'), line('remove', 1, null), line('add', null, 1),
+    hunk('@@ -40 +40 @@'), line('remove', 40, null), line('add', null, 40)]);
+  const {context, state, ui} = fixture;
+  state.files.push({...state.files[0], path: 'src/second.js', lines: [hunk('@@ -4 +4 @@'), line('add', null, 4)]});
+  state.expanded.add(1);
+  state.diffView = layout;
+  context.renderDiff();
+  ui.diff.children.forEach((block, file) => { block.bounds = {top: file * 500, bottom: (file + 1) * 500}; });
+  for (const row of ui.diff.querySelectorAll('.row[data-row]')) {
+    const top = Number(row.dataset.file) * 500 + Number(row.dataset.row) * 50;
+    row.bounds = {top, bottom: top + 30};
+  }
+  context.trackFile();
+  return fixture;
+}
+
+test('change navigation follows hunks across files in both layouts without wrapping', () => {
+  for (const layout of ['inline', 'split']) {
+    const {context, state, ui} = changePage(layout);
+    assert.equal(ui['change-position'].textContent, 'Change 1 of 3');
+    assert.equal(ui['previous-change'].disabled, true);
+    context.stepChange(-1);
+    assert.equal(ui.diff.querySelector('[data-file="0"][data-row="0"]').scrolled, undefined);
+    context.stepChange(1);
+    const second = ui.diff.querySelector('[data-file="0"][data-row="3"]');
+    assert.equal(second.scrolled, true);
+    second.bounds = {top: 44, bottom: 74};
+    ui.diff.scrollTop = 106;
+    context.trackFile();
+    assert.equal(ui['change-position'].textContent, 'Change 2 of 3');
+    context.stepChange(1);
+    assert.equal(ui.diff.querySelector('[data-file="1"][data-row="0"]').scrolled, true);
+    ui.diff.children[0].bounds = {top: -500, bottom: 0};
+    ui.diff.children[1].bounds = {top: 0, bottom: 500};
+    ui.diff.scrollTop = 500;
+    context.trackFile();
+    assert.equal(ui['next-change'].disabled, true);
+    context.stepChange(1);
+    assert.equal(state.currentChange, 2);
+    context.stepChange(-1);
+    assert.equal(second.scrolled, true);
+  }
+});
+
+test('change navigation respects filtering and includes files without text hunks', () => {
+  const {context, state, ui} = changePage('split');
+  state.files.push({...state.files[0], path: 'image.png', binary: true, lines: []});
+  state.filter = 'image.png';
+  state.expanded.clear();
+  context.renderDiff();
+  assert.equal(ui['change-position'].textContent, 'Change 1 of 1');
+  assert.equal(ui['previous-change'].disabled, true);
+  assert.equal(ui['next-change'].disabled, true);
+  state.filter = 'missing';
+  context.renderDiff();
+  assert.equal(ui['change-position'].textContent, '0 changes');
+  assert.equal(ui['next-change'].disabled, true);
+  context.stepChange(1);
+  assert.equal(state.expanded.size, 0);
+});
+
+test('change navigation reveals collapsed and truncated hunks without changing drafts or annotations', () => {
+  for (const layout of ['inline', 'split']) {
+    const {context, state, ui} = changePage(layout);
+    state.expanded.clear();
+    context.renderDiff();
+    context.stepChange(1);
+    assert.equal(state.expanded.has(0), true);
+    assert.equal(ui.diff.querySelector('[data-file="0"][data-row="0"]').scrolled, true);
+    context.boot.maxLines = 3;
+    context.renderDiff();
+    const target = {scope: 'line', repository: '/repo', path: 'src/example.js', side: 'old', start_line: 1, end_line: 1};
+    state.pendingTarget = target;
+    state.threads.push({text: 'Keep this comment', target});
+    ui['composer-text'].value = 'Keep this draft';
+    ui.composer.hidden = false;
+    context.stepChange(1);
+    assert.equal(ui.diff.querySelector('[data-file="0"][data-row="3"]').scrolled, true);
+    assert.equal(state.pendingTarget, target);
+    assert.equal(ui['composer-text'].value, 'Keep this draft');
+    assert.equal(state.threads[0].text, 'Keep this comment');
+  }
+});
+
+test('change navigation stays inactive for document reviews and submitted decisions', () => {
+  const {context, state, ui} = changePage('inline');
+  context.boot.mode = 'document';
+  context.stepChange(1);
+  const second = ui.diff.querySelector('[data-file="0"][data-row="3"]');
+  assert.equal(second.scrolled, undefined);
+  context.boot.mode = 'diff';
+  state.submitted = true;
+  context.stepChange(1);
+  assert.equal(second.scrolled, undefined);
+});
+
+test('clamped jumps advance the destination until manual scrolling resumes viewport tracking', () => {
+  for (const layout of ['inline', 'split']) {
+    const {context, state, ui} = changePage(layout);
+    state.files.pop();
+    context.renderDiff();
+    const first = ui.diff.querySelector('[data-file="0"][data-row="0"]');
+    const second = ui.diff.querySelector('[data-file="0"][data-row="3"]');
+    first.bounds = {top: 0, bottom: 30};
+    second.bounds = {top: 300, bottom: 330};
+    second.onScroll = () => {
+      ui.diff.scrollTop = 180;
+      first.bounds = {top: -180, bottom: -150};
+      second.bounds = {top: 120, bottom: 150};
+    };
+    context.trackFile();
+    context.stepChange(1);
+    assert.equal(ui['change-position'].textContent, 'Change 2 of 2');
+    context.trackFile();
+    assert.equal(ui['next-change'].disabled, true);
+    context.stepChange(1);
+    assert.equal(state.currentChange, 1);
+    ui.diff.scrollTop = 0;
+    first.bounds = {top: 0, bottom: 30};
+    second.bounds = {top: 300, bottom: 330};
+    context.trackFile();
+    assert.equal(ui['change-position'].textContent, 'Change 1 of 2');
+    assert.equal(ui['next-change'].disabled, false);
+  }
 });

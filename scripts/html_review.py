@@ -819,9 +819,11 @@ aside{overflow:auto; min-height:0; background:var(--surface)}
 #diff::after{content:""; display:block; height:45vh}
 #review-pane{display:flex; flex-direction:column; min-height:0; min-width:0}
 #review-pane #diff{flex:1}
-#current-file{display:flex; gap:12px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--raised)}
-#current-file-path{min-width:0; flex:1; overflow:auto; white-space:nowrap; font:400 12.5px/1.5 var(--mono)}
+#current-file{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--line); background:var(--raised)}
+#current-file-path{min-width:0; flex:1 1 180px; overflow:auto; white-space:nowrap; font:400 12.5px/1.5 var(--mono)}
 #current-file-position{flex:none; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
+#change-navigation{display:flex; flex-wrap:wrap; align-items:center; gap:6px}
+#change-position{color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums}
 body.document #current-file{display:none}
 
 /* ------------------------------------------------------------- file list */
@@ -1121,6 +1123,11 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
     <div id="current-file" hidden>
       <span id="current-file-path" tabindex="0"></span>
       <span id="current-file-position"></span>
+      <div id="change-navigation" role="group" aria-label="Change navigation">
+        <button id="previous-change" class="tiny" disabled>Previous change</button>
+        <span id="change-position">0 changes</span>
+        <button id="next-change" class="tiny" disabled>Next change</button>
+      </div>
     </div>
     <section id="diff"></section>
   </section>
@@ -1224,6 +1231,9 @@ const state = {
   data: null,
   files: [],
   currentFile: -1,
+  changeStops: [],
+  currentChange: -1,
+  changeLocation: null,
   commentsCollapsed: false,
   diffView: "inline",
   wrapLines: true,
@@ -1480,7 +1490,9 @@ function trackFile() {
   const host = el("diff");
   const blocks = Array.from(host.children).filter((block) => block.classList.contains("file"));
   const top = host.getBoundingClientRect().top;
-  const current = blocks.find((block) => block.getBoundingClientRect().bottom > top + 1) || blocks[blocks.length - 1];
+  const location = state.changeLocation;
+  const destination = location && Math.abs(host.scrollTop - location.scrollTop) < 1 && blocks.find((block) => Number(block.dataset.file) === location.fileIndex);
+  const current = destination || blocks.find((block) => block.getBoundingClientRect().bottom > top + 1) || blocks[blocks.length - 1];
   state.currentFile = current ? Number(current.dataset.file) : -1;
   el("current-file").hidden = !current;
   const file = state.files[state.currentFile];
@@ -1497,6 +1509,68 @@ function trackFile() {
     item.classList.toggle("active", active);
     if (active) item.setAttribute("aria-current", "true"); else item.removeAttribute("aria-current");
   }
+  trackChanges();
+}
+
+function collectChangeStops() {
+  const stops = [];
+  for (const file of visibleFiles()) {
+    const fileIndex = state.files.indexOf(file);
+    const rows = [];
+    file.lines.forEach((line, row) => {
+      if (line.type === "meta" && line.text.startsWith("@@ ")) rows.push(row);
+    });
+    for (const row of rows.length ? rows : [null]) stops.push({fileIndex, row});
+  }
+  return stops;
+}
+
+function changeElement(stop) {
+  if (stop.row !== null) return el("diff").querySelector('[data-file="' + stop.fileIndex + '"][data-row="' + stop.row + '"]');
+  const file = el("diff").querySelector('.file[data-file="' + stop.fileIndex + '"]');
+  return file ? file.firstElementChild : null;
+}
+
+function trackChanges() {
+  const stops = state.changeStops;
+  const top = el("diff").getBoundingClientRect().top;
+  let current = -1;
+  stops.forEach((stop, index) => {
+    if (stop.fileIndex !== state.currentFile) return;
+    const node = changeElement(stop);
+    const margin = node ? parseFloat(getComputedStyle(node).scrollMarginTop) || 0 : 0;
+    if (current === -1 || (node && node.getBoundingClientRect().top <= top + margin + 1)) current = index;
+  });
+  const location = state.changeLocation;
+  if (location && Math.abs(el("diff").scrollTop - location.scrollTop) < 1) {
+    const destination = stops.findIndex((stop) => stop.fileIndex === location.fileIndex && stop.row === location.row);
+    if (destination >= 0) current = destination;
+  } else state.changeLocation = null;
+  state.currentChange = current;
+  el("change-position").textContent = stops.length ? "Change " + (current + 1) + " of " + stops.length : "0 changes";
+  el("previous-change").disabled = current <= 0;
+  el("next-change").disabled = !stops.length || (current === stops.length - 1 && !!changeElement(stops[current]));
+}
+
+function stepChange(step) {
+  if (boot.mode === "document" || state.submitted || state.dialog || !el("help").hidden) return;
+  trackFile();
+  const current = state.currentChange;
+  const index = current < 0 ? 0 : step > 0 && !changeElement(state.changeStops[current]) ? current : current + step;
+  const stop = state.changeStops[index];
+  if (!stop) return;
+  const truncated = stop.row !== null && boot.maxLines > 0 && stop.row >= boot.maxLines;
+  if (!state.expanded.has(stop.fileIndex) || truncated) {
+    state.expanded.add(stop.fileIndex);
+    if (truncated) boot.maxLines = 0;
+    renderDiff();
+  }
+  const node = changeElement(stop);
+  if (node) {
+    node.scrollIntoView({block: "start", inline: "nearest", behavior: "instant"});
+    state.changeLocation = {...stop, scrollTop: el("diff").scrollTop};
+  }
+  trackFile();
 }
 
 // ---------------------------------------------------------------- diff tokens
@@ -1779,6 +1853,8 @@ function onSelectionEnter(event) {
 }
 
 function renderDiff() {
+  state.changeLocation = null;
+  state.changeStops = collectChangeStops();
   const host = el("diff");
   host.textContent = "";
   host.className = "";
@@ -2621,6 +2697,8 @@ el("comments-toggle").addEventListener("click", () => setCommentsCollapsed(!stat
 el("view-inline").addEventListener("click", () => setDiffView("inline"));
 el("view-split").addEventListener("click", () => setDiffView("split"));
 el("wrap-lines").addEventListener("click", () => setWrapLines(!state.wrapLines));
+el("previous-change").addEventListener("click", () => stepChange(-1));
+el("next-change").addEventListener("click", () => stepChange(1));
 el("next-thread").addEventListener("click", () => cycleThread(1));
 el("help-open").addEventListener("click", () => { el("help").hidden = false; });
 el("help").addEventListener("click", () => { el("help").hidden = true; });
