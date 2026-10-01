@@ -30,6 +30,7 @@ Keep exactly one replaceable section with the following heading in the plan. Rep
 - Authoritative next: the plan's unchanged or advanced `next:` value.
 - Expected dirty files: every dirty path, including unrelated pre-existing user files, and the reason for each, or `none`; preserve all untouched except for authorized task changes.
 - Child state: every task-owned child and consumed handoff, normally `none`.
+- Review state, when applicable: pending phase, criterion, exact repository/path scope or document, private command-artifact directory and first recovery action. Its private operational record holds the review ID, expected fingerprint, URL, supported command/session handle when available and recorded outcome or `pending`. Missing handles or results remain explicit evidence gaps. Follow [task-review recovery](../../task-review/SKILL.md#recover-an-interrupted-review) before relaunching a review or committing.
 - Learned execution decisions: settled implementation facts that do not change the specification.
 - Blockers: current blockers, or `none`.
 - Residual risks: accepted P2 notes and other residual risks, or `none`.
@@ -39,6 +40,8 @@ Keep exactly one replaceable section with the following heading in the plan. Rep
 
 Use a partial checkpoint only when interruption prevents the normal checkpoint. Do not advance `next:`, do not claim completion, and do not create a misleading commit. Record the exact dirty-file state, exact active or interrupted child state, every command and result so far, remaining evidence gaps, and the first recovery action. Worker reports and dirty code remain untrusted until the replacement session inspects and reviews the diff and reruns fresh evidence; only then may it commit or advance.
 
+Before entering an HTML review wait, record the pending review and its private artifact location so an abrupt interruption can be recovered. Do not advance the plan's `next:`; record review recovery as the first resume action. Write this checkpoint before capturing the reviewed state, then store its expected fingerprint externally. Keep a reviewed document or checkpoint within the diff scope unchanged through verification and approval use/consumption, including the diff commit. Put later command handles, URL information and interim checkpoint-consumption state in the private operational record and supported session history instead. This deferral takes precedence over the normal checkpoint-consumption order in `resume-plan`; update the embedded checkpoint only after the review approval has been used and consumed. Recovery records are not human approval.
+
 ## Fresh-session bootstrap
 
 1. Read `AGENTS.md`, the approved specification, the plan, and its continuation checkpoint.
@@ -46,7 +49,7 @@ Use a partial checkpoint only when interruption prevents the normal checkpoint. 
 3. Only after that validation, fetch from an existing upstream. Update only when safe, without discarding checkpointed work or creating or forcing a conflict, then revalidate the repository identity, checkout, branch, HEAD, exact dirty set, and absence of inherited writers. If no upstream exists, report it once and continue locally.
 4. Rerun the last completed task's recorded evidence. For a partial checkpoint, first inspect and review the dirty diff and follow its first recovery action.
 5. Route any unexplained state mismatch or command failure to `investigate`; do not execute forward.
-6. After validation and evidence pass, mark the checkpoint state `consumed` before continuing.
+6. After validation and evidence pass, mark the checkpoint state `consumed` before continuing, except when it is within a pending or approved review scope. In that case, record checkpoint consumption externally and defer the embedded edit as described above.
 7. Preserve the existing implementation approval unless validation reveals a material scope change. When authoritative next is `next: finish`, load `finish`; otherwise execute only the named task.
 
 End the old session with: “Start a new session in the same checkout, validate the continuation checkpoint in `<absolute plan path>`, then execute its `next:`.”

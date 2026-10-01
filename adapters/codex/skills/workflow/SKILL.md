@@ -19,7 +19,8 @@ A specification archives the approved decisions; a plan derives from them and ad
 - The plan owns the exact repository mapping, internal function-call seams, migration mechanics, sequencing, compatibility work, and verification for those decisions. It never duplicates or silently redesigns the specification.
 
 After writing or materially revising either artifact, run the `task-review` `review-doc` gate on the
-file and stop until the human approves it there; apply every annotation it returns and re-review. Do not
+file and await its command using the Codex `task-review` skill without ending the turn; act on the
+returned decision and apply requested annotations before re-review. Do not
 also ask a separate numbered question for the same document. A specification approval authorizes planning only; a single-change entry must explicitly authorize implementation. A material scope change needs new approval.
 
 ## Schema and migrations
@@ -38,7 +39,7 @@ Read the approved scope and the plan's `next:` when present. Implement one task 
 
 Keep the unit uncommitted while running focused evidence and parent review. Present one complete review packet containing the criterion, complete unified diff, affected callers and error paths, exact tests and results, assumptions, trade-offs, residual risks and a verdict. This is one user review point per unit; do not automatically substitute the group-by-group `interactive-review` skill.
 
-Stop for explicit approval of the packet. Correct approved in-scope findings and rerun evidence. When a correction materially changes reviewed behavior, show the correction delta and obtain renewed approval. Only then stage task-owned files and commit the verified logical unit. Update task progress, review progress and `next:` in the plan, then continue the next approved dependency. A passing check or commit is not a stopping point.
+Obtain explicit approval of the packet through `task-review`; present the URL in commentary and await the same command without ending the turn. Its validated HTML decision needs no duplicate chat confirmation. Correct approved in-scope findings and rerun evidence. When a correction materially changes reviewed behavior, show the correction delta and obtain renewed approval. Only then stage task-owned files and commit the verified logical unit. Update task progress, review progress and `next:` in the plan, then continue the next approved dependency. A passing check or commit is not a stopping point.
 
 ## Integrated review and finish
 
