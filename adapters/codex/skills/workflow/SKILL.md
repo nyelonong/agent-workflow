@@ -9,7 +9,7 @@ Use the global engineering policy and the Codex adapter for approval and agent a
 
 ## Choose the entry
 
-For one clear, routine change, obtain implementation approval and use `implement`; no specification or plan is needed. For unclear work, use `shape` and stop for specification approval. An approved specification with several tasks goes to `plan`: consult at most one native read-only `architect`, and only when an independent view materially improves the plan, then reconcile the advice against repository evidence, write the ordered plan, and stop for approval. Do not consult another architect for the same planning phase. Read-only investigation, shaping and review can proceed within the user's request.
+For one clear, routine change, state the bounded scope and use the clear implementation request as approval under AGENTS.md. Ask only when scope or authority remains unresolved. Default to direct parent execution and use `implement`; no specification, plan, or separate execution-choice question is needed. For unclear work, use `shape` and stop for specification approval. An approved specification with several tasks goes to `plan`: consult at most one native read-only `architect`, and only when an independent view materially improves the plan, then reconcile the advice against repository evidence, write the ordered plan, and stop for approval. Do not consult another architect for the same planning phase. Read-only investigation, shaping and review can proceed within the user's request.
 
 ## Specification and plan ownership
 
@@ -37,9 +37,9 @@ This runtime has no dedicated SQL skill, so the shared workflow skill owns these
 
 Read the approved scope and the plan's `next:` when present. Implement one task or tightly coupled unit through `implement`. The parent retains implementation ownership; use an isolated writer only when the user requests it or approved parallel work requires separate checkouts. Never delegate an unresolved user decision.
 
-Keep the unit uncommitted while running focused evidence and parent review. Present one complete review packet containing the criterion, complete unified diff, affected callers and error paths, exact tests and results, assumptions, trade-offs, residual risks and a verdict. This is one user review point per unit; do not automatically substitute the group-by-group `interactive-review` skill.
+Keep the unit uncommitted while running focused evidence and parent review. Explain why it changed, affected callers and contracts, tests and results, assumptions, trade-offs, and residual risks. Run `task-review` with the approved criterion and task-owned paths; the client collects the complete working-tree diff. Do not reconstruct it or substitute the group-by-group `interactive-review` skill.
 
-Obtain explicit approval of the packet through `task-review`; present the URL in commentary and await the same command without ending the turn. Its validated HTML decision needs no duplicate chat confirmation. Correct approved in-scope findings and rerun evidence. When a correction materially changes reviewed behavior, show the correction delta and obtain renewed approval. Only then stage task-owned files and commit the verified logical unit. Update task progress, review progress and `next:` in the plan, then continue the next approved dependency. A passing check or commit is not a stopping point.
+Obtain exact-state approval through `task-review`; present the URL in commentary and await the same command without ending the turn. Its validated HTML decision needs no duplicate chat confirmation. Correct approved in-scope findings and rerun evidence. When a correction materially changes reviewed behavior, show the correction delta and obtain renewed approval. Only then stage task-owned files and commit the verified logical unit. Update task progress, review progress and `next:` in the plan, then continue the next approved dependency. A passing check or commit is not a stopping point.
 
 ## Integrated review and finish
 

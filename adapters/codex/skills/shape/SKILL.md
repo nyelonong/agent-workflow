@@ -37,6 +37,6 @@ A specification includes:
 
 Before showing the draft, self-check it for unsupported assumptions and counterexamples. Fix findings inline.
 
-Present the specification through a plain numbered question and stop for approval, stating which phase the approval authorizes under `AGENTS.md`. A material revision requires approval again.
+Present the specification through the `task-review` `review-doc` gate, stating which phase approval authorizes under `AGENTS.md`. Follow the Codex `task-review` skill to await the same command and apply returned annotations before re-review. Do not also ask a numbered approval question for that document. A material revision requires approval again.
 
 Specification approval authorizes planning; a single-change option must explicitly authorize implementation. Do not begin the next phase before its approval.

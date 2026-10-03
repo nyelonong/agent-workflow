@@ -40,7 +40,11 @@ class WorkflowContractTests(unittest.TestCase):
 
         self.assertIn("at most one `architect`", workflow)
         self.assertIn("parent implements", workflow)
-        self.assertIn("complete uncommitted review packet", workflow)
+        self.assertIn("shared `task-review` client", workflow)
+        self.assertIn("complete working-tree diff", workflow)
+        self.assertIn("explicit approval of the exact reviewed state", workflow)
+        self.assertIn("A failed or cancelled gate authorizes no commit", workflow)
+        self.assertIn("do not reconstruct it or ask for duplicate chat approval", workflow)
         self.assertIn("no mandatory subagent review", workflow)
         self.assertIn("at most one fresh `reviewer`", workflow)
 

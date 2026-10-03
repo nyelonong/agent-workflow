@@ -9,7 +9,7 @@ Follow the global personal engineering policy. Use the runtime's native user-dec
 
 ## Entry
 
-- For a clear, routine single change, skip specification and plan artifacts. Obtain implementation approval and continue directly.
+- For a clear, routine single change, state the bounded scope and skip specification and plan artifacts. A clear implementation request supplies approval under the global policy; ask only when scope or authority remains unresolved. Default to direct parent implementation.
 - For fuzzy work, shape a concise specification, then run the `task-review` `review-doc` gate on the file and stop until the human approves it there.
 - For approved multi-task work, consult at most one `architect`, and only when an independent view materially improves the plan. Reconcile its advice, write one ordered plan, then run the `task-review` `review-doc` gate on the plan file and stop until the human approves it there.
 - Read-only investigation, review, and verification do not require implementation approval.
@@ -35,22 +35,15 @@ material scope change needs new approval.
 
 ## Implementation
 
-The parent implements one approved task or tightly coupled unit at a time and owns every user decision. Use a writer only when the global consequence policy requires isolation or the user requests delegation. Do not launch generic subagents for ordinary work.
+The parent implements one approved task or tightly coupled unit at a time and owns every user decision. Use an isolated writer only when the user requests delegation or approved parallel writers need separate checkouts. Do not launch generic subagents for ordinary work or require a separate execution-method choice.
 
 Choose test-first development for observable behavior and reproducible regressions. Use proportional fresh verification for prose, configuration, mechanical changes, and simple wiring.
 
 ## User review
 
-Before each task commit, show one complete uncommitted review packet:
+Before each task commit, explain the change concisely: why it was needed, affected callers and contracts, verification results, assumptions, trade-offs, and residual risks. Run the shared `task-review` client with the approved criterion, repository roots, and task-owned paths. The client collects the complete working-tree diff; do not reconstruct it or ask for duplicate chat approval.
 
-- the approved criterion;
-- the complete diff;
-- affected callers and interfaces;
-- tests and exact results;
-- assumptions and trade-offs;
-- residual risks and evidence limits.
-
-Wait for explicit user approval. Apply approved corrections in scope. If reviewed production behavior materially changes, show the correction delta and obtain renewed approval before commit.
+Wait for the gate's explicit approval of the exact reviewed state. Apply approved corrections in scope, rerun evidence, and re-review every changed state. A failed or cancelled gate authorizes no commit.
 
 ## Independent review
 

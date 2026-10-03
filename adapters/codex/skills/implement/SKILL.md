@@ -5,7 +5,7 @@ description: Use before changing production code. Choose risk-based TDD or propo
 
 # Implement
 
-Confirm explicit approval of the current scope and execution path. When a plan applies it must be approved; specification approval alone does not authorize a multi-task implementation. A clear routine change needs an explicit implementation decision, not a specification. Preserve existing approval for in-scope corrections; ask only for a material unresolved decision or scope change.
+Confirm authorization of the current bounded scope under AGENTS.md. A clear user request to implement that local scope supplies approval; do not ask for it again or require a separate execution-method choice. When a plan applies it must be approved; specification approval alone does not authorize a multi-task implementation. Preserve approval for in-scope corrections; ask only when scope, authority, or a material decision remains unresolved. Implementation approval does not replace exact-state pre-commit review or required authorization for sensitive or external actions.
 
 Classify material failure outcomes using AGENTS.md. Consequential work stays with the parent. This adapter has no automatic model handoff. Use native isolated writers only when explicitly requested or approved parallel work requires isolation; give each exact file ownership, acceptance criteria, boundaries and required evidence. The parent owns user decisions, actual diff review, fresh checks and commits.
 
@@ -13,6 +13,6 @@ Use test-first for bugs, stateful logic, business rules, validation, parsers, pu
 
 For prose, presentation, mechanical edits and simple wiring, explain why new tests add little value and run the narrowest relevant parsing, lint, typecheck, build or direct inspection. If reproduction requires an unavailable environment, record the strongest available evidence and the exact gap rather than guessing a fix or inventing passing coverage.
 
-Inspect callers, contracts and failure paths as warranted by the change. After implementation use `review` for parent inspection and `verify` for fresh evidence. Keep the unit uncommitted until the complete review packet has explicit user approval. Preserve any required fresh independent review before completion; direct implementation never waives it. If a correction materially changes reviewed behavior, show the delta and obtain renewed approval.
+Inspect callers, contracts and failure paths as warranted by the change. After implementation use `review` for parent inspection and `verify` for fresh evidence. Keep the unit uncommitted until `task-review` has collected the complete diff and approved the exact state. Do not reconstruct the diff or ask for duplicate chat approval. Preserve any required fresh independent review before completion; direct implementation never waives it. A correction changes the reviewed state and requires fresh evidence and task review.
 
 Commit one verified logical unit with its tests, staging only task-owned paths. Never create a commit solely to mark a red-green loop or a partial milestone. Continue approved work after passing checks and commits; stop for required review or decisions. Report fresh evidence and its limits before claiming completion.
