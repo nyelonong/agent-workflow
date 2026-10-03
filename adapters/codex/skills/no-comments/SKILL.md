@@ -19,12 +19,13 @@ Keep a comment only when it matches one of these exceptions:
 
 - Legal or license headers.
 - Compiler, build, code-generation, cgo, and generated-file directives that tooling requires, such as `//go:build`, `//go:generate`, cgo preambles, and generated-file markers.
-- Non-obvious behavior forced by an external dependency, platform, vendor, or protocol that our code cannot reshape.
+- Non-obvious behavior forced by an external dependency, platform, vendor, or protocol.
+- Non-obvious constraints or decisions in our code supported by code or contract evidence, including why an intentionally ignored error cannot affect correctness or resource safety.
 - Public API documentation that defines a contract.
 - An issue or RFC link that records a constraint code cannot express.
 - `prettier-ignore` or an equivalent style-only suppression when the rule is faulty or pedantic.
 
-Existing comments receive the same keep-list test as new comments. Narration, banners, tutorial prose, commented-out code, restatements, and workaround explanations do not qualify. A comment that explains a surprise in our code is a reshape finding. Prefer a clearer name, type, test, lint rule, or structure.
+Existing comments receive the same keep-list test as new comments. Narration, banners, tutorial prose, commented-out code, and restatements do not qualify. Prefer clearer names, types, tests, or structure, but do not force restructuring merely to remove a useful rationale. An explanation is not a correctness exemption; unsupported safety claims remain OPEN.
 
 Audit `eslint-disable`, `@ts-ignore`, `@ts-expect-error`, `//nolint`, and similar suppressions. Correctness or safety suppressions are findings. Keep a suppression only when its rule is proven faulty, pedantic, or style-only. Do not remove a compiler-significant directive or generated-file marker.
 

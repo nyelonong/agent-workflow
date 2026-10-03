@@ -6,17 +6,17 @@ Before repository work, inspect status and remotes and fetch an existing upstrea
 
 ## Go
 
-Start any Go work with the runtime's installed Go engineering skill, and load its detailed references only when work changes network resilience, concurrency, context lifetimes, runtime or performance problems, or database transaction retry. Routine HTTP mapping, context propagation, compiler errors, focused test failures, and ordinary database edits do not load them. Without that skill, inspect `go.mod`, repository instructions, nearby code, tests, and continuous- integration configuration first. Prefer clear, idiomatic Go and the standard library; add interfaces, generics, reflection, concurrency, resilience, telemetry, or dependencies only for a demonstrated current need.
+Start any Go work with the runtime's installed Go engineering skill. Reuse current repository evidence; refresh stale or uncertain facts and inspect only relevant module, code, tests, and CI requirements. Load detailed references only for network resilience, concurrency, nontrivial context lifetimes, runtime/performance problems, or transaction retry—not routine mapping or ordinary edits. Without the skill, respect the declared Go version and repository conventions.
 
 ## Commits and comments
 
 Commit one verified logical unit with its tests, and only after an approval recorded for the exact reviewed state. Stage task-owned files only. Use a clear subject and at most two body lines. Never include internal IDs, AI attribution, `Co-Authored-By`, generated-with footers, or bot sign-offs.
 
-Comments and docstrings are guilty by default: keep only legal headers, required compiler, build, code-generation, cgo and generated-file directives, non-obvious behavior forced by an external dependency, platform, vendor or protocol, public API contracts, constraint issue or RFC links, and proven faulty or style-only suppressions. Existing comments get the same keep list. Delete narration, banners, tutorial prose, commented-out code, and restatements, and express surprises in our own code through clearer names, types, tests, lint, or structure. Treat correctness and safety suppressions as findings, not exemptions.
+Comments and docstrings are guilty by default: keep only legal headers, required compiler, build, code-generation, cgo and generated-file directives, non-obvious constraints or decisions supported by code or contract evidence, including external behavior and safely ignored errors, public API contracts, constraint issue or RFC links, and proven faulty or style-only suppressions. Existing comments receive the same keep-list test. Remove in-scope narration, banners, tutorials, commented-out code, and restatements. Prefer clearer code; retain useful rationale rather than force restructuring. Comments do not excuse correctness failures; treat correctness and safety suppressions as findings, not exemptions.
 
 ## Engineering
 
-State material assumptions and trade-offs. Build only the approved requirement. Change only necessary code, callers, interfaces, tests, and documentation. Report unrelated defects and obtain user approval before fixing them, and do not refactor, rename, reformat, or change adjacent code without approval. When the smallest correct change is only clean or safe inside a structural change, name that restructuring in the approval request instead of working around it.
+State material assumptions and trade-offs. Build only the approved requirement. Change only necessary code, callers, interfaces, tests, and documentation. Necessary local restructuring, renaming, and formatting are implementation discretion when they preserve approved behavior and contracts. Report unrelated defects; unrelated cleanup or material scope or contract changes require approval.
 
 Use the smallest direct solution: no change, existing code, standard library, platform or database features, installed dependency, then new code. Inspect the real path and callers first.
 
@@ -36,7 +36,7 @@ Load the runtime's SQL or migration skill before designing a schema or writing a
 
 Test observable behavior and stable invariants, not production configuration. Use the smallest fresh proof that demonstrates the change; documentation or configuration changes need focused parsing, lint, or diff checks unless executable behavior changes.
 
-Unit tests run in one process with no network, real time, Docker, credentials, or PostgreSQL, ClickHouse, or Redis. Keep integration, third-party contract, and smoke tests separate. Integration uses isolated real components; contract tests use an approved sandbox or test account; smoke tests use one safe running path. Integration, smoke, and end-to-end tests are local-only and never committed.
+Unit tests run in one process with no network, real time, Docker, credentials, or PostgreSQL, ClickHouse, or Redis. Keep integration, third-party contract, and smoke tests separate. Integration tests may be committed and run in CI only with explicitly selected isolated test components and deterministic setup and cleanup. Never default to live endpoints or use production credentials. Contract tests use an approved sandbox or test account; smoke tests use one safe running path. Smoke and end-to-end tests stay local-only, uncommitted. Committing tests authorizes no sensitive or external actions.
 
 Use the cheapest proof that establishes the claim. Use an isolated real database for database behavior. Use an in-process HTTP server only for transport details; treat it as integration. Before building an upstream simulator, ask whether an approved sandbox or test API key exists.
 
