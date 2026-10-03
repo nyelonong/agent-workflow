@@ -16,7 +16,7 @@ Comments and docstrings are guilty by default: keep only legal headers, required
 
 ## Engineering
 
-State material assumptions and trade-offs. Build only the approved requirement. Change only necessary code, callers, interfaces, tests, and documentation. Necessary local restructuring, renaming, and formatting are implementation discretion when they preserve approved behavior and contracts. Report unrelated defects; unrelated cleanup or material scope or contract changes require approval.
+State material assumptions and trade-offs. Build only approved scope. Change only necessary code, callers, interfaces, tests, and documentation. Necessary local restructuring, renaming, and formatting are implementation discretion when they preserve approved behavior and contracts. Report unrelated defects; unrelated cleanup or material scope or contract changes require approval.
 
 Use the smallest direct solution: no change, existing code, standard library, platform or database features, installed dependency, then new code. Inspect the real path and callers first.
 
@@ -50,7 +50,7 @@ Do not claim completion from stale evidence or another agent's report. After the
 
 Continue task-owned work through implementation, review, fixes, verification, and commits. After any successful action, continue with the next tool call; never end a turn with intent-only text such as "Proceeding" or "Continuing". A passing check, task boundary, commit, or clear local failure is not a reason to stop. Stop only when complete, externally blocked, awaiting approval or a required decision, or asked for a report. Automatic context compaction is not a task boundary; continue the task and recover dropped detail from the runtime's supported context or durable artifacts. A planned continuation checkpoint is valid only when backed by a durable safe or honest partial state; it does not relax requested-outcome continuity.
 
-Use plain English. Explain mentioned IDs, tickets, blockers, and commit SHAs; otherwise omit them. Lead decisions with a recommendation and reason.
+Use simple English names and prose; allow common terms and abbreviations. Explain mentioned IDs, tickets, blockers, and commit SHAs or omit them. Recommend and say why.
 
 A local commit does not authorize a remote write. Pushes, pull requests, comments, merges, releases, deployments, publications, and other remote mutations each require explicit user approval unless the user already authorized that exact action for the current task.
 

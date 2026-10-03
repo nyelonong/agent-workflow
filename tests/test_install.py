@@ -56,6 +56,8 @@ class WorkflowContractTests(unittest.TestCase):
             "start any go work",
             "change only necessary code, callers, interfaces, tests, and documentation",
             "report unrelated defects",
+            "use simple english names",
+            "allow common terms and abbreviations",
             "comments and docstrings are guilty by default",
             "async work needs an explicit owner and cancellation path",
             "do not optimize speculatively",
