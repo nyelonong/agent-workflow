@@ -29,7 +29,7 @@ After the command completes, read its final JSON, annotations, diagnostics and e
 
 The command exits 0 only for `approve`.
 
-- `approve` — run fresh required evidence, then `verify` for the exact approved scope immediately before staging and continue the authorized local work. Do not edit approved files to address an annotation without re-reviewing the changed state.
+- `approve` — reuse sufficient current evidence under the shared workflow contract; run only missing or invalidated checks, then `verify` for the exact approved scope immediately before staging and continue the authorized local work. Do not edit approved files to address an annotation without re-reviewing the changed state.
 - `request-changes` — exit 1 is an expected decision. Read the annotations, apply authorized in-scope corrections, rerun focused evidence, and gate the corrected state again with a new review ID and private directory. A material scope change needs the user's decision first.
 - `return-to-planning` — the criterion was wrong, not the code. Stop, return to planning with the user, and re-approve before further work.
 - `cancelled` — the human withdrew. Stop.

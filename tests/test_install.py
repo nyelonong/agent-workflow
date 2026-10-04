@@ -22,8 +22,8 @@ class WorkflowContractTests(unittest.TestCase):
         for required in (
             "production implementation requires explicit approval",
             "clear, routine single change",
-            "at most one architect",
-            "one complete uncommitted review packet",
+            "the shared `workflow` skill owns entry",
+            "complete actual uncommitted diff for the logical unit",
             "fresh independent review is mandatory only when",
             "application runtime behavior",
             "data integrity",
@@ -38,15 +38,20 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("no production code without a failing test first", lowered)
         self.assertNotIn("routing:", lowered)
 
-        self.assertIn("at most one `architect`", workflow)
-        self.assertIn("parent implements", workflow)
-        self.assertIn("shared `task-review` client", workflow)
-        self.assertIn("complete working-tree diff", workflow)
-        self.assertIn("explicit approval of the exact reviewed state", workflow)
-        self.assertIn("A failed or cancelled gate authorizes no commit", workflow)
-        self.assertIn("do not reconstruct it or ask for duplicate chat approval", workflow)
-        self.assertIn("no mandatory subagent review", workflow)
-        self.assertIn("at most one fresh `reviewer`", workflow)
+        for required in (
+            "at most one read-only architect",
+            "parent implements",
+            "shared `task-review` client",
+            "collects the real complete diff",
+            "Every changed reviewed state invalidates human approval",
+            "errors and cancellation authorize no commit",
+            "duplicate chat confirmation",
+            "no mandatory subagent review",
+            "one fresh read-only independent reviewer",
+            "before its applicable delivery or safety boundary",
+            "Repeat executable checks only if missing or invalidated",
+        ):
+            self.assertIn(required, workflow)
 
     def test_portable_policy_carries_the_hard_engineering_rules(self) -> None:
         policy = (ROOT / "policy.md").read_text(encoding="utf-8").lower()
@@ -59,7 +64,7 @@ class WorkflowContractTests(unittest.TestCase):
             "use simple english names",
             "allow common terms and abbreviations",
             "comments and docstrings are guilty by default",
-            "async work needs an explicit owner and cancellation path",
+            "async work needs a clear owner and an appropriate cancellation or shutdown path",
             "do not optimize speculatively",
             "## sql and migrations",
             "once applied in a shared, test, staging, or production environment",
@@ -323,7 +328,7 @@ class CodexInstallerTests(InstallerTests):
                 self.assertIn('sandbox_mode = "read-only"', agent.read_text())
             link = home / ".codex/skills/workflow"
             self.assertTrue(link.is_symlink())
-            self.assertEqual(ROOT / "adapters/codex/skills/workflow", Path(os.readlink(link)))
+            self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(link)))
             for name in (
                 "shape", "plan", "implement", "investigate", "review", "verify", "finish",
                 "no-comments", "domain-language", "plan-review", "interactive-review",
@@ -342,12 +347,33 @@ class CodexInstallerTests(InstallerTests):
             self.seed(home)
             workflow = home / ".codex/skills/workflow"
             workflow.parent.mkdir()
-            workflow.symlink_to(ROOT / "skills/workflow")
+            workflow.symlink_to(ROOT / "adapters/codex/skills/workflow")
             unrelated = home / ".codex/config.toml"
             unrelated.write_text('model = "existing-model"\n')
             self.run_installer(home, runtime="codex")
-            self.assertEqual(ROOT / "adapters/codex/skills/workflow", Path(os.readlink(workflow)))
+            self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(workflow)))
             self.assertEqual('model = "existing-model"\n', unrelated.read_text())
+
+    def test_workflow_collisions_fail_before_any_write(self) -> None:
+        for kind in ("directory", "foreign-link", "broken-link"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                self.seed(home)
+                target = home / ".codex/skills/workflow"
+                target.parent.mkdir()
+                if kind == "directory":
+                    target.mkdir()
+                    (target / "SKILL.md").write_text("User workflow\n")
+                else:
+                    foreign = home / "foreign"
+                    if kind == "foreign-link":
+                        foreign.mkdir()
+                    target.symlink_to(foreign)
+                before = self.snapshot(home)
+                result = self.run_installer(home, runtime="codex", check=False)
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn("refusing", result.stderr)
+                self.assertEqual(before, self.snapshot(home))
 
     def test_skill_collisions_fail_before_any_write(self) -> None:
         for kind in ("directory", "foreign-link", "broken-link"):

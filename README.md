@@ -26,7 +26,8 @@ only mean something inside Pi sit between `<!-- pi-only:start -->` and
 ./install.sh check pi    # fails when policy.md is stale
 ```
 
-Nothing writes into `~/.pi/agent`. Claude Code, Codex, and Antigravity consume the
+The installer never writes into `~/.pi/agent`. Pi's `workflow` entrypoint consumes
+this repository's shared source through its explicitly configured link. Claude Code, Codex, and Antigravity consume the
 generated `policy.md`; re-run `install codex` after a change, since Codex holds a
 rendered copy.
 
@@ -56,8 +57,8 @@ the automatic prewalk handoff claim. Codex stays on the selected model. Regenera
 `policy.md` also refreshes rules consumed by Claude and Antigravity; their runtime
 adapters and prewalk behavior are unchanged.
 
-Codex-specific skills live in `adapters/codex/skills/`; the shared `skills/workflow`
-remains the source for the other runtimes. The installer migrates only the known
+Native phase skills live in `adapters/codex/skills/`; `skills/workflow` is the
+single workflow-contract source for every runtime, including Pi and Codex. The installer migrates only the known
 previous Codex workflow link and refuses unrelated skill files or links before
 writing. Pi remains the source for `go-engineering`, linked with its references;
 `~/.pi/agent/skills/go-engineering/SKILL.md` must exist for installation and checks.

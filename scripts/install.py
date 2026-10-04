@@ -428,7 +428,7 @@ def codex_agent_files(home: Path) -> list[tuple[Path, Path]]:
 
 def codex_links(home: Path) -> list[tuple[Path, Path]]:
     names = (
-        "workflow", "shape", "plan", "implement", "investigate", "review", "verify", "finish",
+        "shape", "plan", "implement", "investigate", "review", "verify", "finish",
         "no-comments", "domain-language", "plan-review", "interactive-review", "prepush",
         "resume-plan", "project", "feature-journey", "research", "repo-fit", "retry", "task-boundary",
         "task-review",
@@ -436,14 +436,17 @@ def codex_links(home: Path) -> list[tuple[Path, Path]]:
     return [
         (ROOT / "adapters/codex/skills" / name, home / ".codex/skills" / name)
         for name in names
-    ] + [(home / ".pi/agent/skills/go-engineering", home / ".codex/skills/go-engineering")]
+    ] + [
+        (ROOT / "skills/workflow", home / ".codex/skills/workflow"),
+        (home / ".pi/agent/skills/go-engineering", home / ".codex/skills/go-engineering"),
+    ]
 
 
 def legacy_codex_workflow(source: Path, target: Path) -> bool:
     return (
-        source == ROOT / "adapters/codex/skills/workflow"
+        source == ROOT / "skills/workflow"
         and target.is_symlink()
-        and Path(os.readlink(target)) == ROOT / "skills/workflow"
+        and Path(os.readlink(target)) == ROOT / "adapters/codex/skills/workflow"
     )
 
 

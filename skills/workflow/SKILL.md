@@ -1,59 +1,63 @@
 ---
 name: workflow
-description: Runs the personal adaptive idea-to-commit workflow. Use when the user asks for the workflow or wants a change carried through approval, implementation, review, verification, and commit.
+description: Run the adaptive idea-to-finish workflow, or resume approved work. Owns proportional entry, artifact design, continuous closeout, evidence reuse and logical review units.
 ---
 
 # Workflow
 
-Follow the global personal engineering policy. Use the runtime's native user-decision and agent facilities; never claim a tool or enforcement mechanism that the runtime does not provide.
+Apply the global engineering policy and relevant repository requirements. This is the shared workflow contract; native adapters supply invocation, waiting and recovery mechanics, not alternate policy. Reuse instructions and repository evidence while available and current; load a specialist or tool only for an actual need.
 
-## Entry
+## Entry and design
 
-- For a clear, routine single change, state the bounded scope and skip specification and plan artifacts. A clear implementation request supplies approval under the global policy; ask only when scope or authority remains unresolved. Default to direct parent implementation.
-- For fuzzy work, shape a concise specification, then run the `task-review` `review-doc` gate on the file and stop until the human approves it there.
-- For approved multi-task work, consult at most one `architect`, and only when an independent view materially improves the plan. Reconcile its advice, write one ordered plan, then run the `task-review` `review-doc` gate on the plan file and stop until the human approves it there.
-- Read-only investigation, review, and verification do not require implementation approval.
+- For a clear, routine single change, use the bounded implementation request as authorization under global policy. Default to direct parent implementation; continue without a specification, plan, or separate execution-choice question. Ask only for unresolved scope, authority, isolation or cost.
+- For fuzzy work or unresolved material decisions, shape a concise specification. Consequence alone does not require a new specification when scope and decisions are settled.
+- Plan only multiple logical tasks. Consult at most one read-only architect when useful, not as a prerequisite. Reconcile its advice against the approved specification and repository.
+- Read-only investigation, shaping, review and verification need no implementation approval. Preserve existing authorization on resume unless scope, authority, isolation or cost materially changes.
 
-## Specification and plan ownership
+A specification archives approved decisions; a plan derives their execution and adds none.
 
-A specification archives the approved decisions; a plan derives from them and
-adds no new ones.
+| Artifact | Decision-relevant coverage |
+| --- | --- |
+| Specification | Goal, non-goals, constraints, decision log, acceptance outcomes and proof; affected roles when defined. Architecture/boundaries, ownership/lifecycle/invariants and affected contracts: producers/consumers, transport, schema/field meanings, validation, authorization, errors, compatibility and sensitive-data handling. Diagram material structure, flow or data and failure paths. Database work includes conceptual entities, relationship cardinality, ownership, keys/constraints, query-backed indexes, retention and compatibility. Record actual section references or justified not-applicable areas in a compact design-coverage table. |
+| Plan | Reference specification sections and acceptance criteria rather than restating them. Record baseline, existing dirty-path ownership, dependencies, exact paths/source seams, ordered changes, authority, evidence commands/results, risks and recovery. Classify consequence and independent-review necessity separately. Maintain task/review progress and one authoritative `next:`. |
 
-- The specification owns approved architecture and boundaries, diagrams that
-  clarify material structure or flow, boundary-level request, function, and
-  data flows, database design, ownership, lifecycle, and invariants, and
-  inbound and outbound data contracts.
-- The plan references those decisions and owns their exact repository mapping,
-  internal function-call seams, migration mechanics, sequencing, compatibility
-  work, and verification. It never duplicates or silently redesigns the
-  specification.
+Scale both artifacts to decisions, not the longest template. Settle material unknowns before approval; a read-before-edit list cannot hide a design decision. A task must be executable from the plan, specification and repository.
 
-After writing or materially revising either artifact, present it for approval
-and stop before implementation. A specification approval authorizes planning
-only; a single-change option must explicitly authorize implementation. A
-material scope change needs new approval.
+Use the shared `task-review` client `scripts/task_review.py review-doc` for new or materially revised specifications/plans. Apply annotations and re-review changed documents; walkthrough acknowledgements are not approval. Specification approval authorizes planning only; a single-change entry must explicitly authorize implementation. Plan approval authorizes its implementation. No separate chat approval competes with the document gate.
 
-## Implementation
+## Implementation responsibilities
 
-The parent implements one approved task or tightly coupled unit at a time and owns every user decision. Use an isolated writer only when the user requests delegation or approved parallel writers need separate checkouts. Do not launch generic subagents for ordinary work or require a separate execution-method choice.
+The parent implements one authorized task or tightly coupled unit and owns decisions, actual diff inspection, proof and commits. Use an isolated writer only on user request or for approved parallel writers needing separate checkouts. Delegation does not waive any boundary.
 
-Choose test-first development for observable behavior and reproducible regressions. Use proportional fresh verification for prose, configuration, mechanical changes, and simple wiring.
+Settle placement, consuming interfaces, branch representation and state ownership before editing. Use the global engineering and testing policy: test-first for reproducible bugs/regressions; choose an appropriate sequence for new behavior with meaningful boundary proof. Prose, configuration and mechanical changes may need only parsing, lint or direct checks. Preserve stricter repository requirements.
 
-## User review
+## Evidence reuse
 
-Before each task commit, explain the change concisely: why it was needed, affected callers and contracts, verification results, assumptions, trade-offs, and residual risks. Run the shared `task-review` client with the approved criterion, repository roots, and task-owned paths. The client collects the complete working-tree diff; do not reconstruct it or ask for duplicate chat approval.
+Evidence proves a particular claim and scope, not a phase name. Reuse proof produced after the last relevant edit while relevant code, dependencies, configuration and environment remain unchanged. Refresh missing, stale or uncertain proof with the smallest necessary check. Do not reread available current instructions, repeat reports, or rerun tests merely because review, verification or approval began.
 
-Wait for the gate's explicit approval of the exact reviewed state. Apply approved corrections in scope, rerun evidence, and re-review every changed state. A failed or cancelled gate authorizes no commit.
+Behavior-changing corrections invalidate affected checks and review coverage; preserve unaffected evidence. Every changed reviewed state invalidates human approval, even if tests pass. A fingerprint proves identity, not behavioral sufficiency. Approval alone neither invalidates executable evidence nor supplies missing proof. Repository-required gates remain required.
 
-## Independent review
+## Continuous closeout
 
-Work outside the global independent-review boundary receives parent verification and user review, with no mandatory subagent review. When the boundary applies, launch at most one fresh `reviewer` over the integrated change before completion. The reviewer is read-only and independent from the author. One focused follow-up may check accepted corrections; do not start an open-ended reviewer loop.
+1. Assess each logical change's approved requirements, complete actual diff, relevant callers/contracts, risks and verification evidence together. Review owns acceptance/quality; verify owns evidence sufficiency/freshness. These are responsibilities within this pass, not required skill calls.
+2. For material or uncertain changes inspect load-bearing seams beyond edited lines, using the strongest applicable evidence. Integrate comment/docstring/suppression auditing; do not schedule a separate comment reviewer unless explicitly requested or required by the global material-failure boundary.
+3. Fix approved in-scope gaps, refresh affected proof and reassess. Requirements-first, evidence-backed P0/P1 findings block. P2 is optional; do not expand scope to eliminate it.
+4. When the global independent-review boundary applies, use one fresh read-only independent reviewer for the integrated reviewable unit before its applicable delivery or safety boundary. Do not defer required review automatically until plan completion or require one reviewer per checklist task. Separately delivered units can have separate boundaries. Outside that boundary there is no mandatory subagent review. A required unavailable reviewer blocks until available or explicitly waived by the user.
+5. Reuse applicable unchanged review coverage. Resolve concrete findings once; use one focused follow-up when corrections alter reviewed behavior. A new consequential problem in that follow-up requires reconsideration or a user decision. High-risk seams retain focused parent inspection.
+6. Explain the change once with its criterion, callers/contracts, evidence, assumptions, trade-offs and risks. Keep the unit uncommitted; `task-review` collects the real complete diff for task-owned paths. The user records approve, request changes, return to planning or cancel there. Never replace the collected diff with a summary or duplicate chat confirmation. Changed state requires fresh human review; errors and cancellation authorize no commit.
+7. On approval, run `task_review.py verify` immediately before staging. Only a matching approval fingerprint and sufficient current evidence permit staging task-owned paths and one logical commit. Repeat executable checks only if missing or invalidated, not solely after approval. Inspect staged paths, commit, and `consume` the approval. Record actual results and advance the plan's `next:` when present; continue authorized work.
 
-## Verification and finish
+A failed gate blocks; never automatically fall back to unbound chat approval. A supported replacement approval mechanism requires explicit authorization. Sensitive or external actions need their own existing authority; local approval does not authorize push, pull request, merge, deploy, publication, contact or destructive cleanup.
 
-After the last relevant change, run focused checks and the repository-required gate. Inspect the staged paths, commit one verified logical unit, and report the evidence and limits. A local commit does not authorize a push, pull request, merge, release, deployment, publication, message, or other remote mutation. Obtain explicit approval for the exact remote action.
+## Integrated finish and continuity
 
-Continue through approved local work without pausing at passing tests, task boundaries, or commits. Stop only for a required decision, external blocker, user review, remote-action approval, or completion.
+After the last plan task, assess the integrated result against specification and plan. Per-task checks do not alone prove interactions. Establish the repository's full gate against that result; reuse an already applicable full-gate result, or refresh it when invalidated or repository rules require it. Required independent review may be this integrated pass when no earlier delivery/safety boundary requires it; do not add a duplicate finish reviewer.
+
+Resolve blockers through the same closeout. Report gate results, skips, evidence limits and residual risks. The final merge, pull-request, keep or discard decision stays with the user; a passing gate authorizes none of them.
+
+A phase change, passing check, task boundary or commit is not a stop while authorized work remains. Stop for completion, external block, required decision/approval, cancellation, requested report, or a permitted honest continuation checkpoint. Automatic compaction is transparent, not a task boundary.
+
+On resume or retry inspect durable state, supported history and available results before replaying operations. Necessary read-only checks are allowed; never blindly repeat writes or infer unknown consequential outcomes. Recover a pending review before launching another; unknown ownership blocks a duplicate launch. Keep reviewed inputs unchanged through approval use/consumption, recording operational recovery state outside the reviewed scope. Read-only roles do not edit reviewed code/data, stage, commit or remotely mutate; any necessary local metadata, outputs or private operational records need explicit scoped permission.
 
 ## Schema and migrations
 

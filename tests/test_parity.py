@@ -18,7 +18,7 @@ PI_FILE = Path.home() / ".pi/agent/AGENTS.md"
 PI_SKILL = Path.home() / ".pi/agent/skills/workflow/SKILL.md"
 
 MECHANICS = {
-    "pi": ("ask_decision", "workflowScript", "vcc_recall", "/council", "pi-subagents"),
+    "pi": ("ask_decision", "workflowScript", "vcc_recall", "pi-subagents"),
     "claude": ("Claude Code", "/graphify"),
     "agy": ("Antigravity",),
     "codex": ("spawn", "$workflow", "Codex"),

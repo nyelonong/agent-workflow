@@ -1,6 +1,6 @@
 # Codex adapter
 
-Reuse skill instructions while they remain available in context. Reload after context loss, relevant file updates, or an explicit requirement for a fresh read. Load supporting references only when needed. Required skill invocation, approval, verification, and stop rules still apply.
+Reuse skill instructions while they remain available in context. Reload after context loss, relevant file updates, or uncertainty about an applicable instruction. Load supporting references only when needed. Apply the shared workflow's responsibilities without a ceremonial skill-calling chain. Approval, evidence and legitimate-stop boundaries still apply.
 
 Use a plain numbered question for required decisions: state the question, recommend one option with its reason, and stop until the user answers. Never treat a sandbox or command approval prompt as product or implementation approval.
 

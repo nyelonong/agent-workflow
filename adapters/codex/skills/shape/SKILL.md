@@ -20,20 +20,13 @@ Use synthesis when the requirements are already clear. Do not create clarificati
 Apply deeper lenses only when the work needs them:
 
 - For flow-heavy architecture or data work, use [the graph lens](references/graph-lens.md).
-- For user-facing flows, use [the interface flow lens](references/interface-flow.md).
+- For changes to a user's task or interaction, apply [the interface flow lens](references/interface-flow.md), including permissions, focus and empty/loading/error/denied states. Skip it when no interaction behavior changes.
 
 Straightforward work should skip these lenses.
 
 Write the draft to `<repository-root>/docs/specs/YYYY-MM-DD-<topic>.md`. Determine the repository root from the active project (for example, Git's top-level directory); if no repository root exists, use the current working directory. Do not commit the draft.
 
-A specification includes:
-
-- Goal.
-- Non-goals.
-- Constraints.
-- Decision log.
-- Observable, verifiable acceptance criteria stated as outcomes rather than implementation steps.
-- Affected roles when the repository defines roles.
+Apply the shared workflow's specification and design-coverage contract; do not copy a separate runtime template. Scale diagrams, ownership, contracts and evidence to material decisions. Record actual section references or justified not-applicable areas. Settle material unknowns before approval; missing external evidence or authority is an explicit blocker.
 
 Before showing the draft, self-check it for unsupported assumptions and counterexamples. Fix findings inline.
 

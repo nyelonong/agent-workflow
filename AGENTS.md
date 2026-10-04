@@ -14,4 +14,4 @@ sh -n install.sh
 python3 -m py_compile scripts/install.py
 ```
 
-No upstream exists. Do not create or publish one without explicit approval.
+Do not create or publish a remote without explicit approval.

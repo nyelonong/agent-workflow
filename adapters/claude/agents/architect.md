@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Read-only planning adviser for approved multi-task work. Use exactly once when the personal workflow requires a plan.
+description: Read-only planning adviser for approved multi-task work. Consult at most once when an independent view materially improves planning.
 tools: Read, Grep, Glob, Bash
 permissionMode: plan
 ---

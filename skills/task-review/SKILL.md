@@ -21,6 +21,10 @@ that state. It owns the diff; you never restate it.
   only supported way to reach it.
 - Read-only investigation, review, and verification need no gate.
 
+## Waiting and recovery
+
+Before capture, retain the criterion, exact scope/document, authorized phase and recovery location in supported history or an existing plan. Keep private command records outside the reviewed tree; do not create a plan merely to wait. Native adapters own command handles and waiting. Keep reviewed inputs unchanged through approval verification and use/consumption; record interim operational state externally. Recover the original command and result before relaunching. Unknown ownership or consequential outcome blocks replay and progression; it never implies approval.
+
 ## Act on the decision
 
 The command exits 0 only for `approve`.
@@ -42,8 +46,8 @@ The gate speaks one protocol, so the surface is a choice, not a branch. It opens
 the bundled HTML page by default. `TASK_REVIEW_REVIEWER=rdg` sends the identical
 request to RDG, which reviews inside a running editor window; the repository must
 be open there and the root must be a canonical absolute path. The README records
-a known RDG failure, so keep the HTML page unless told otherwise. Choose by mood,
-never mid-decision: one approval, one reviewer.
+a known RDG failure, so keep the HTML page unless told otherwise. Choose the supported surface before launch, never mid-decision: one human decision
+for the captured state.
 
 ## Commit
 
@@ -52,7 +56,8 @@ never mid-decision: one approval, one reviewer.
 - Run `consume` after the commit lands, so the approval cannot cover a second
   commit.
 - A correction after approval invalidates it. A passing test suite does not
-  renew an approval.
+  renew an approval. Executable evidence follows the shared workflow's freshness
+  contract; approval alone is not a reason to rerun it.
 
 ## Documents: specifications and plans
 
@@ -83,9 +88,9 @@ approval invalidates it.
 - `cancelled` — the human withdrew. Stop.
 
 This is the approval step for `shape` and `plan`. Do not also ask a separate
-approve/deny question for the same document. If the page cannot be opened at
-all, fall back to the runtime's own question interface, and say plainly that
-the approval was not bound to a fingerprint.
+approve/deny question for the same document. If the page cannot be opened, report the failure and stop. No automatic unbound
+chat fallback is permitted. Continue only through an explicitly authorized supported
+approval mechanism.
 
 ## Commands
 

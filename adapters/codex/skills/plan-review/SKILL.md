@@ -9,7 +9,7 @@ Establish a durable review-progress record in the plan file's review-progress se
 (create it if missing): numbered task groups, status, findings, and revisions. Update
 it after every group.
 
-First re-read the approved specification and the full plan. Verify the plan covers every
+Use the approved specification and full current plan; reuse them while available and unchanged. Verify the plan covers every
 specification requirement — list any requirement with no owning task before the
 walkthrough starts.
 
@@ -21,7 +21,7 @@ Run the review interactively:
    provide a review packet:
    - the goal and the specification requirement or acceptance criterion it serves;
    - the files, seams, and step-by-step changes it plans, with exact paths;
-   - whether the detail is sufficient for a cheap model to execute without judgment
+   - whether the detail is sufficient for an executor to execute without hidden judgment
      calls — flag every hidden decision, ambiguous instruction, or missing file path;
    - its acceptance criteria and evidence commands: are they runnable, and do they
      actually prove the criterion;
@@ -40,9 +40,9 @@ Run the review interactively:
    walkthrough completes and the plan is approved.
 
 After the last group, present the final ledger: total groups; reviewed, skipped, and
-revised counts; each verdict; open questions; and remaining specification gaps. Then ask
-for plan approval with one plain numbered question, recommend an option with its reason, and stop. Only explicit approval authorizes
-implementation.
+revised counts; each verdict; open questions; and remaining specification gaps. Then run the shared `task-review` `review-doc` gate on the final plan and await its
+validated decision using the native task-review mechanics. Walkthrough `ok` or `skip`
+is not document approval. Only the approved final plan authorizes implementation.
 
 Review against the specification before general quality. Cite concrete plan lines and
 specification items for findings. Keep the response concise; no large final summary
