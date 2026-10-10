@@ -567,13 +567,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_everything(home: Path, *, installing: bool) -> int:
-    """Render, install and check every runtime in one pass.
-
-    A shared skill is copied into some runtimes and linked into others, so
-    editing the source and installing only one of them leaves an agent behind.
-    This is the command that cannot be forgotten.
-    """
-    render_pi(home)
+    if installing:
+        render_pi(home)
+    else:
+        check_pi(home)
     for install, check, name in (
         (install_codex, check_codex, "codex"),
         (install_claude, check_claude, "claude"),

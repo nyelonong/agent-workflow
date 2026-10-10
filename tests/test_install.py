@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -289,7 +290,7 @@ class ClaudeInstallerTests(InstallerTests):
 
 
 class CodexInstallerTests(InstallerTests):
-    RTK_LINE = "@/Users/zaki/.codex/RTK.md\n"
+    RTK_LINE = "@/home/example/.codex/RTK.md\n"
 
     def seed(self, home: Path) -> Path:
         go = home / ".pi/agent/skills/go-engineering"
@@ -603,55 +604,108 @@ if __name__ == "__main__":
 
 
 class EveryRuntimeTests(unittest.TestCase):
-    """One command for every runtime, and proof they hold the same skill."""
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        base = Path(directory.name).resolve()
+        self.package = base / "package"
+        self.package.mkdir()
+        for name in ("install.sh", "policy.md"):
+            shutil.copy2(ROOT / name, self.package / name)
+        for name in ("scripts", "skills", "adapters"):
+            shutil.copytree(
+                ROOT / name, self.package / name, symlinks=True,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+        self.home = base / "home"
+        go = self.home / ".pi/agent/skills/go-engineering"
+        go.mkdir(parents=True)
+        (go / "SKILL.md").write_text("# go\n", encoding="utf-8")
+        (self.home / ".pi/agent/AGENTS.md").write_text(RenderPolicyTests.PI_TEXT, encoding="utf-8")
 
-    def run_installer(self, home: Path, *args: str) -> subprocess.CompletedProcess:
+    def run_installer(self, *args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            [str(INSTALLER), "--home", str(home), *args],
-            cwd=ROOT,
+            [str(self.package / "install.sh"), "--home", str(self.home), *args],
+            cwd=self.package,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env={**os.environ, "HOME": str(home)},
+            env={**os.environ, "HOME": str(self.home), "PYTHONDONTWRITEBYTECODE": "1"},
         )
 
+    @staticmethod
+    def snapshot(root: Path) -> dict[str, tuple[int, bytes | str | None]]:
+        result = {}
+        for path in (root, *sorted(root.rglob("*"))):
+            mode = path.lstat().st_mode
+            content = os.readlink(path) if path.is_symlink() else path.read_bytes() if path.is_file() else None
+            result[str(path.relative_to(root))] = (mode, content)
+        return result
+
+    def install_all(self) -> None:
+        result = self.run_installer("install-all")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def check_without_writes(self) -> subprocess.CompletedProcess[str]:
+        before = self.snapshot(self.package), self.snapshot(self.home)
+        result = self.run_installer("check-all")
+        self.assertEqual(before, (self.snapshot(self.package), self.snapshot(self.home)))
+        return result
+
     def test_one_command_installs_every_runtime(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
-            (home / ".pi/agent/skills").mkdir(parents=True)
-            (home / ".pi/agent/skills/go-engineering").mkdir(parents=True)
-            (home / ".pi/agent/skills/go-engineering/SKILL.md").write_text("# go\n", encoding="utf-8")
-            (home / ".pi/agent/AGENTS.md").write_text(
-                (Path.home() / ".pi/agent/AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8"
-            )
-            result = self.run_installer(home, "install-all")
-            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
-            for runtime in ("codex", "claude", "agy", "omp"):
-                self.assertIn(f"{runtime} personal workflow: install ok", result.stdout)
-            self.assertIn("pi personal workflow: render ok", result.stdout)
+        result = self.run_installer("install-all")
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        for runtime in ("codex", "claude", "agy", "omp"):
+            self.assertIn(f"{runtime} personal workflow: install ok", result.stdout)
+        self.assertIn("pi personal workflow: render ok", result.stdout)
+
+    def test_check_all_succeeds_without_writes(self) -> None:
+        self.install_all()
+        result = self.check_without_writes()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+
+    def test_check_all_rejects_stale_policy_without_writes(self) -> None:
+        self.install_all()
+        policy = self.package / "policy.md"
+        policy.write_text(policy.read_text(encoding="utf-8") + "\nstale\n", encoding="utf-8")
+        policy.chmod(0o640)
+        result = self.check_without_writes()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("stale", result.stderr)
+
+    def test_check_all_rejects_missing_policy_without_writes(self) -> None:
+        self.install_all()
+        (self.package / "policy.md").unlink()
+        result = self.check_without_writes()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("stale", result.stderr)
+
+    def test_check_all_rejects_missing_pi_source_without_writes(self) -> None:
+        self.install_all()
+        (self.home / ".pi/agent/AGENTS.md").unlink()
+        result = self.check_without_writes()
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Pi instructions are missing", result.stderr)
 
     def test_check_all_fails_when_a_runtime_is_behind(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            home = Path(directory)
-            (home / ".pi/agent/skills").mkdir(parents=True)
-            (home / ".pi/agent/skills/go-engineering").mkdir(parents=True)
-            (home / ".pi/agent/skills/go-engineering/SKILL.md").write_text("# go\n", encoding="utf-8")
-            (home / ".pi/agent/AGENTS.md").write_text(
-                (Path.home() / ".pi/agent/AGENTS.md").read_text(encoding="utf-8"), encoding="utf-8"
-            )
-            self.assertEqual(0, self.run_installer(home, "install-all").returncode)
-            stale = home / ".gemini/config/skills/task-review/SKILL.md"
-            self.assertTrue(stale.is_file(), "agy holds a copy, so it can be edited by hand")
-            stale.write_text(stale.read_text(encoding="utf-8") + "\nstale\n", encoding="utf-8")
-            result = self.run_installer(home, "check-all")
-            self.assertNotEqual(0, result.returncode, "a runtime that has drifted must fail the check")
+        self.install_all()
+        stale = self.home / ".gemini/config/skills/task-review/SKILL.md"
+        self.assertTrue(stale.is_file(), "agy holds a copy, so it can be edited by hand")
+        stale.write_text(stale.read_text(encoding="utf-8") + "\nstale\n", encoding="utf-8")
+        result = self.check_without_writes()
+        self.assertNotEqual(0, result.returncode, "a runtime that has drifted must fail the check")
+
+    def test_install_all_renders_changed_pi_policy(self) -> None:
+        self.install_all()
+        source = self.home / ".pi/agent/AGENTS.md"
+        source.write_text(source.read_text(encoding="utf-8") + "\nThird rule.\n", encoding="utf-8")
+        self.install_all()
+        self.assertIn("Third rule.", (self.package / "policy.md").read_text(encoding="utf-8"))
+        result = self.check_without_writes()
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_a_runtime_left_behind_by_a_shared_skill_edit_is_detectable(self) -> None:
-        # agy receives a copy rather than a link, so editing the shared skill and
-        # installing one runtime leaves another behind. Every reachable copy must
-        # therefore still hold the current text.
-        # Each runtime is compared against the source it is meant to hold: codex
-        # keeps its own copy on purpose, the rest share one file.
+        # Codex intentionally consumes a runtime-specific variant.
         shared = (ROOT / "skills/task-review/SKILL.md").read_bytes()
         codex_source = (ROOT / "adapters/codex/skills/task-review/SKILL.md").read_bytes()
         copies = {
