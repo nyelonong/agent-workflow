@@ -1,223 +1,230 @@
-# Personal agent workflow
+# agent-workflow
 
-Portable behavior shared by Claude Code, Google Antigravity, Codex, and omp so
-each follows the same visible approval, implementation, review, verification,
-commit, and remote-action flow as the personal Pi setup.
+**A portable workflow and human-review harness for coding agents.**
 
-The package intentionally does not emulate Pi-only tools. Each runtime uses its native question and subagent interfaces.
+Use **task-review** on its own to review a real Git working-tree diff or a
+specification/plan in a local browser. Optionally install the shared engineering
+workflow and native adapters for Claude Code, Google Antigravity, Codex and omp.
+Agent runtimes still own model/tool execution; this package is not another agent
+runtime and does not emulate Pi-only tools.
 
-## Antigravity
+## Task-review quickstart
+
+Requires Python 3.11 or 3.13, Git and a local browser. No pip/npm installation,
+Node, agent runtime, workflow installation or editor is needed to run the gate.
+Node is used only for the JavaScript tests. Linux verification is proposed in CI;
+local verification has been performed on macOS. Windows is not a verified path.
+If the GitHub repository is private, cloning requires access; these commands do
+not publish it.
+
+```sh
+git clone https://github.com/nyelonong/agent-workflow.git
+HARNESS="$(cd agent-workflow && pwd -P)"
+TARGET="$(cd /path/to/your/git-repository && pwd -P)"
+
+python3 "$HARNESS/scripts/task_review.py" review \
+  --criterion "The approved change and its tests are correct" \
+  --repo "$TARGET" --paths src/example.py,tests/test_example.py
+```
+
+Run the client from the **trusted harness checkout**, not a similarly named
+script supplied by the repository being reviewed. Replace the criterion and
+paths with the actual approved unit. Omit `--paths` only when the whole current
+working-tree change belongs to that unit. Paths are repo-relative; directory
+scopes include their descendants. `--repo` may be repeated for a multi-root
+review.
+
+The client collects the actual change and blocks while you inspect the default
+bundled HTML page. Add line-anchored comments and choose **approve**, **request
+changes**, **return to planning** or **cancelled**. Only approval of the captured
+state authorizes proceeding. Do not edit reviewed inputs or start another review
+in the same ledger context while a decision is pending.
+
+After approval, verify immediately before staging. Stage only task-owned files,
+inspect the staged paths, commit the same logical unit, then retire the approval:
+
+```sh
+python3 "$HARNESS/scripts/task_review.py" verify \
+  --repo "$TARGET" --paths src/example.py,tests/test_example.py
+git -C "$TARGET" add -- src/example.py tests/test_example.py
+git -C "$TARGET" diff --cached --name-only
+git -C "$TARGET" commit -m "Describe the verified change"
+python3 "$HARNESS/scripts/task_review.py" consume --repo "$TARGET"
+```
+
+Stop if any step fails. Changed state requires a new review, not a waived
+fingerprint check. A successful local review or commit grants **no push, merge,
+deployment, recipient contact or publication authority**.
+
+### Documents
+
+```sh
+python3 "$HARNESS/scripts/task_review.py" review-doc \
+  --criterion "This specification settles the requested scope and contracts" \
+  --doc /absolute/path/to/specification.md
+python3 "$HARNESS/scripts/task_review.py" verify-doc \
+  --doc /absolute/path/to/specification.md
+python3 "$HARNESS/scripts/task_review.py" consume-doc \
+  --doc /absolute/path/to/specification.md
+```
+
+The page renders headings, paragraphs, tables and code with a heading outline.
+Comments retain source line ranges. Keep the document unchanged through approval
+verification and its authorized use; consume its approval after using it for the
+next phase. Specification approval permits planning; plan approval permits its
+bounded implementation. Private planning documents may live under the ignored
+`docs/` directory; they are not release content.
+
+### Results, failure and reviewer choice
+
+Exit 0 means approval (or a successful verify/consume operation), 1 means a
+non-approving decision or verification mismatch, and 2 means an error. Successful
+result commands emit JSON; help/usage/errors retain their own output conventions.
+A failed reviewer, malformed result, timeout or mid-review state change provides
+no approval. Inspect the actual command result before retrying. Read-only work
+needs no approval gate.
+
+| Surface | Selection | Boundary |
+| --- | --- | --- |
+| Bundled HTML | Default, or `TASK_REVIEW_REVIEWER=html` | Loopback browser; no external editor or asset CDN required |
+| RDG | `TASK_REVIEW_REVIEWER=rdg` | Existing running RDG window with the target repository open; canonical absolute roots |
+| Custom process | `TASK_REVIEW_REVIEWER` command | Trusted program taking one JSON request argument and returning one JSON result line |
+
+`RDG_CONTROL_COMMAND` remains a fallback when `TASK_REVIEW_REVIEWER` is unset.
+The previously observed RDG build opened reviews but failed to return results
+with `io error: Bogus destination port`; use HTML unless your build is verified.
+Changing a surface does not relax the protocol or fingerprint rules. Timeout and
+parent-loss handling belong to the client/reviewer processes; any async waiting,
+wake-up and cancellation integration is supplied by the invoking runtime, not
+promised universally by this package.
+
+### Privacy and trust
+
+The default reviewer serves on 127.0.0.1 behind a per-session token, with bundled
+JavaScript/fonts from the same origin. Treat its URL as sensitive. Review content
+and comments are local, but an unrestricted local process can access local data;
+custom reviewers may handle data differently and must be trusted.
+
+Approvals and annotations are stored in `task-review-approval.jsonl` in the
+reviewed repository's Git metadata directory (document reviews use their
+resolved document context). Ledgers can contain criteria, paths and comments:
+keep them private, do not commit or delete them as retry cleanup, and do not
+include live token URLs, sessions or scanner reports in release files.
+
+This is a human judgment and exact-state workflow, **not a sandbox or a
+tamper-proof security barrier** against an agent/process with unrestricted shell
+or write access. A fingerprint establishes identity, not correctness, ownership
+or permission for an external action.
+
+## Optional workflow installation
+
+The shipped `policy.md`, `skills/` and `adapters/` carry the shared engineering
+contract. Each runtime uses native question/subagent facilities. Installation is
+local and non-networked, but intentionally changes marked configuration and
+links/copies in the selected home. It preserves unrelated content and refuses
+unowned collisions; review your existing configuration before invoking it.
+Internal `personal-workflow` markers remain ownership identifiers.
+
+### Prerequisites and Pi policy source
+
+Pi's `~/.pi/agent/AGENTS.md` remains the hand-written policy master; it is not
+included here. Pi-only mechanics are bracketed by `<!-- pi-only:start -->` and
+`<!-- pi-only:end -->`. Regeneration changes this checkout's `policy.md`:
+
+```sh
+./install.sh render pi
+./install.sh check pi
+```
+
+The installer never writes into `~/.pi/agent`. Pi consumes the shared skill through
+an explicitly configured link. This is the existing personal-policy setup, not
+an automatically self-contained installer for every new user. Task-review does
+not need that setup.
+
+Codex installation/checking requires an existing
+`~/.pi/agent/skills/go-engineering/SKILL.md`; Claude links that external skill too.
+The external Go skill and `claude-config` repository are not bundled or downloaded.
+The separate `claude-config/bootstrap.sh --links-only` consumes this repository's
+Claude policy/workflow/roles; this package's Claude installer manages prewalk
+hooks and links, not the complete external Claude bootstrap.
+
+### Commands and effects
 
 ```sh
 ./install.sh install agy
 ./install.sh check agy
-```
-
-The installer manages one marked block in `~/.gemini/GEMINI.md`, the global `workflow` skill, and the `architect` and `reviewer` agents. It removes the old marked Galdr block from `~/.gemini/AGENTS.md` while preserving unrelated content.
-
-## Pi
-
-Pi's `~/.pi/agent/AGENTS.md` is the hand-written master of the rules. Sentences that
-only mean something inside Pi sit between `<!-- pi-only:start -->` and
-`<!-- pi-only:end -->`. `policy.md` in this repository is generated from that file:
-
-```sh
-./install.sh render pi   # regenerate policy.md after editing the Pi file
-./install.sh check pi    # fails when policy.md is stale
-```
-
-The installer never writes into `~/.pi/agent`. Pi's `workflow` entrypoint consumes
-this repository's shared source through its explicitly configured link. Claude Code, Codex, and Antigravity consume the
-generated `policy.md`; re-run `install codex` after a change, since Codex holds a
-rendered copy.
-
-`policy.md` carries the contract every runtime shares. Detail that only one phase
-needs lives in the shared `workflow` skill, the one skill linked into every
-runtime: it owns entry selection, specification and plan ownership, schema and
-migration design, implementation, review, verification, and finish. A phase that
-needs the detail loads the skill; a runtime that cannot see the skill still
-enforces the contract from the rendered policy.
-
-## Codex
-
-```sh
 ./install.sh install codex
 ./install.sh check codex
-```
-
-Codex documents no include directive for its instructions file, so the installer
-renders `policy.md` inline into one marked block in `~/.codex/AGENTS.md`, keeping
-everything outside the block. It also writes read-only `architect` and `reviewer`
-agents to `~/.codex/agents/` (each starts with `# personal-workflow managed`) and
-links the Codex skills into `~/.codex/skills/`. Re-run `install codex` after a
-policy change; `check codex` reports a stale block.
-
-The Codex adapter renders the current portable rules with one exception: it removes
-the automatic prewalk handoff claim. Codex stays on the selected model. Regenerating
-`policy.md` also refreshes rules consumed by Claude and Antigravity; their runtime
-adapters and prewalk behavior are unchanged.
-
-Native phase skills live in `adapters/codex/skills/`; `skills/workflow` is the
-single workflow-contract source for every runtime, including Pi and Codex. The installer migrates only the known
-previous Codex workflow link and refuses unrelated skill files or links before
-writing. Pi remains the source for `go-engineering`, linked with its references;
-`~/.pi/agent/skills/go-engineering/SKILL.md` must exist for installation and checks.
-
-Installed skills:
-
-- Engineering: `workflow`, `shape`, `plan`, `implement`, `investigate`, `review`,
-  `verify`, `finish`, `go-engineering`, `no-comments`, and `domain-language`.
-- Review and continuation: `plan-review`, `interactive-review`, `prepush`,
-  `resume-plan`, `retry`, and `task-boundary`.
-- Investigation and explanation: `project`, `feature-journey`, `research`, and `repo-fit`.
-
-Invoke a skill with its name and context, for example `$resume-plan <plan-path>` or
-`$prepush <base-ref>`. These are skills, not Pi slash-command templates. Required
-decisions use the Codex adapter's user approval flow; subagent advice uses available
-native roles. Planning consults at most one architect, and only when an
-independent view materially improves the plan; the architect preserves inherited
-decisions and reports drift while remaining read-only. Direct implementation never
-waives independent review.
-`no-comments` retains its explicit-only invocation; other reviews may read its keep
-list without launching another reviewer. Private vocabulary uses
-`~/.codex/context/<owner>/<repo>.md`; existing Pi vocabulary is not migrated.
-
-No model router, first-edit model switching, capability loader, VCC/session import,
-RDG tool extension, service integration, credentials, or hook migration is included.
-Existing settings, MCP servers, plugins, hooks and unrelated skills are preserved.
-Use a fresh Codex session after installation to check discovery. A successful local
-installer check proves file/link parity, not discovery or execution in T3 Code.
-
-## Claude Code
-
-`~/Projects/personal/claude-config/bootstrap.sh --links-only` consumes the Claude adapter, workflow skill, and role definitions from this repository. Claude configuration remains owned by `claude-config`. `./install.sh install claude` also links Pi's `go-engineering` skill from `~/.pi/agent/skills` into `~/.claude/skills`, so Go work in Claude uses the same skill as Pi.
-
-## omp
-
-```sh
+./install.sh install claude
+./install.sh check claude
 ./install.sh install omp
 ./install.sh check omp
+./install.sh install-all
+./install.sh check-all
 ```
 
-omp resolves `@path` imports inside context files, so the installer writes one
-marked block into `~/.omp/agent/AGENTS.md` with the generated policy included by
-path and keeps everything outside the block. That native file is omp's
-highest-priority user context file, so the rules load with no configuration.
-The adapter names only facilities omp exposes: the `ask` tool for required
-decisions, `skill://<name>` for skills, `read`, `bash`, `grep`, and `glob`, and
-the `task` tool with its `scout`, `reviewer`, and user-defined agents. `install
-omp` also links `skills/task-review` into `~/.agents/skills`, the canonical
-native skills root.
+`install-all` explicitly renders Pi policy, installs/checks Codex, Claude,
+Antigravity and omp, then checks Pi. It can replace owned copies and rendered
+blocks. After changing shared skills, install all consuming copies explicitly.
+All check commands are read-only. `check-all` and `check pi` reject missing/stale
+Pi-derived policy **without repair**. Individual runtime checks validate their own
+managed artifacts; include-only adapters do not independently validate imported
+policy. Checks prove file/link parity, not live agent discovery/execution. Use a
+fresh runtime session to verify discovery separately.
 
-## Task review gate
-
-`scripts/task_review.py` is the runtime-agnostic client for one pre-commit human
-review. `review` hands the real working-tree change to the reviewer, blocks until
-a human decides, and records an approval bound to a fingerprint of the reviewed
-state. `verify` recomputes that fingerprint and fails if anything changed, and
-`consume` retires the approval after the commit. The gate is fail-closed: a
-failed reviewer, a malformed result, a timeout, or a state that changed while
-the human was reviewing all yield no approval.
-
-The reviewer is a choice, not a branch: the gate speaks one protocol and either
-surface can serve it.
-
-| Reviewer | How to select it | Notes |
-| --- | --- | --- |
-| Bundled HTML page | default | no editor, no network, works anywhere |
-| RDG | `TASK_REVIEW_REVIEWER=rdg` | reviews inside a running RDG window; the repository must be open there and the root must be canonical |
-
-An approval from either is the same kind of approval: fingerprint-bound, single-decision, recorded in the same ledger.
-
-After editing a shared skill, run `./install.sh install-all`: some runtimes
-receive a link and one receives a copy, so installing one leaves the others
-behind. `./install.sh check-all` fails when any runtime has drifted.
-
-The reviewer is pluggable. `TASK_REVIEW_REVIEWER` selects it and defaults to
-`html`, the bundled `scripts/html_review.py`: a token-gated `http.server` on
-127.0.0.1 serving a self-contained page with line-anchored comment threads and the
-four decisions. `TASK_REVIEW_REVIEWER=rdg` selects the `rdg` binary instead, a Zed
-fork that reviews inside a running window. Any process that takes one JSON request
-argument and prints one JSON result line can serve as a reviewer, so adding a
-surface leaves the client unchanged. When `rdg` is the reviewer the repository must
-already be open in the running application, and each root must be a canonical
-absolute path, which the client derives by realpath.
-
-`RDG_CONTROL_COMMAND` is still honored when `TASK_REVIEW_REVIEWER` is unset. RDG's
-current build cannot complete a review: it opens the session and then fails to write
-the result back to the caller, logging `io error: Bogus destination port` at
-`crates/rdg/src/rdg/task_review_coordinator.rs:68` and `:71`. Until that is fixed,
-keep the default HTML reviewer.
-
-```sh
-scripts/task_review.py review --criterion "..." --repo /path/to/repo --paths a,b
-scripts/task_review.py verify --repo /path/to/repo --paths a,b
-scripts/task_review.py consume --repo /path/to/repo
-```
-
-Exit 0 is `approve`, 1 is any other decision or a verify mismatch, and 2 is an
-error. Read-only work needs no gate. The `task-review` skill teaches this flow
-to every runtime:
-
-| Runtime | Skill location |
+| Runtime | Managed boundary |
 | --- | --- |
-| Claude Code | `~/.claude/skills/task-review`, linked by `claude-config/bootstrap.sh` |
-| Antigravity | `~/.gemini/config/skills/task-review` |
-| Codex | `~/.codex/skills/task-review`, invoked as `$task-review` |
-| omp | `~/.agents/skills/task-review`, read at `skill://task-review` |
+| Antigravity | Marked GEMINI.md block; workflow/task-review and role copies; prewalk hooks/links; removes only the old marked Galdr block |
+| Codex | Marked AGENTS.md block with policy inline, managed read-only role files and native skill links; Go source remains Pi-owned |
+| Claude Code | Prewalk hooks alongside unrelated settings and wrapper/config/Go links; external bootstrap owns full Claude configuration |
+| omp | Marked AGENTS.md `@path` policy import and task-review link in `~/.agents/skills` |
 
-## Reviewing a specification or a plan
+Codex keeps the selected model rather than promising an automatic prewalk
+handoff. Its phase skills live in `adapters/codex/skills/`; the shared workflow
+contract is `skills/workflow`. No credentials, MCP service configuration, model
+router, VCC/session migration or unrelated plugin/settings changes are supplied.
 
-The same gate reviews a document, not only a diff:
+Claude/Antigravity prewalk wrappers are optional: their hooks are inert unless
+armed by the wrapper. They run a stronger model until the first edit, then resume
+on the configured target. Wrapper flags, each runtime's flat prewalk config and
+shipped defaults control that behavior; existing permission modes are not
+changed by this release preparation. Inspect those configurations before using
+a wrapper that executes real agent/model work.
 
-```sh
-scripts/task_review.py review-doc --criterion "<the question this document must answer>" --doc <path>
-scripts/task_review.py verify-doc --doc <path>
-scripts/task_review.py consume-doc --doc <path>
-```
+The `task-review` skill is installed in each runtime's native skills root; Codex
+uses `$task-review`, omp uses `skill://task-review`. Workflow phase skills teach
+the local approval/review/verification/commit boundaries; they do not supply
+remote-action authorization.
 
-The page renders the document as a document — headings, paragraphs, tables,
-tokenized code — with a heading outline in the sidebar that marks the section you
-are reading. Each block remembers the source line range it came from, so a
-comment on a paragraph spanning lines 5–7 comes back as `start_line: 5,
-end_line: 7` and reaches the agent as an exact place to edit. The approval is
-bound to a fingerprint of the document's bytes, so editing the plan after
-approving it invalidates the approval.
+## Verification
 
-`scripts/markdown_doc.py` groups the source into one block per construct, with
-the ranges computed by the same pass, and the page renders each block with
-vendored markdown-it. Fenced code is tokenized by vendored highlight.js only when
-the fence names a language it knows; an unknown language stays plain monospace
-rather than guessing.
-
-## Prewalk
-
-`./install.sh install claude` adds the prewalk hooks to `~/.claude/settings.json`
-beside existing hooks and links `~/.local/bin/claude-prewalk`. `./install.sh install agy`
-adds a `prewalk` block to `~/.gemini/config/hooks.json` beside other blocks and links
-`~/.local/bin/agy-prewalk`. `claude-prewalk -- <task>` and `agy-prewalk -- <task>` run a
-strong model until its first edit, then resume the same session on a cheaper model. The
-hooks are inert unless the wrapper armed them; subagents started during phase 1 share
-the arming. Defaults for each wrapper come from flags, then that agent's own flat
-config file, then shipped values. `install claude` links `adapters/claude/prewalk.json`
-to `~/.claude/prewalk.json` (or `$CLAUDE_CONFIG_DIR/prewalk.json`) and `install agy`
-links `adapters/agy/prewalk.json` to `~/.gemini/prewalk.json`:
-
-```json
-{ "from": "fable", "into": "sonnet", "permissionMode": "acceptEdits" }
-{ "from": "claude-opus-4-6-thinking", "into": "gemini-3.8-flash-low", "mode": "accept-edits" }
-```
-
-The Pi prewalk extension reads its own `~/.pi/agent/prewalk.json` (`autoArm`,
-per-provider `starts`, per-provider `targets`), hand-written in the Pi repository like
-its rules. A missing file means shipped defaults; invalid JSON warns once and means
-shipped defaults. Specifications and plans are kept locally under `docs/`, which is not
-tracked.
-
-## Gate
+The repository gate includes unit tests plus explicitly isolated integration
+using temporary Git repositories, synthetic homes/config, stub reviewers and
+loopback HTTP. It does not install into your real home or require credentials,
+RDG or a live upstream. Optional host Pi/Claude parity checks skip when absent;
+those skips are not claims of live-runtime compatibility.
 
 ```sh
 python3 -m unittest discover -s tests -v
+node --test tests/test_diff_view.js
 sh -n install.sh
 python3 -m py_compile scripts/install.py
 ```
+
+Local checks have used macOS, Python 3.13/3.11 test runners and Node 26. The proposed
+GitHub Actions matrix is Linux/macOS with Python 3.11/3.13 and Node 22; adding its
+workflow does not establish a successful remote run. CI has isolated HOME/Git
+configuration, pinned official actions, read-only contents permission, no
+repository secrets and no deployment/publishing steps. Private CI execution/cost
+and pushes still require their own authorization.
+
+## License and assets
+
+Owner-controlled code and workflow text are MIT: see [LICENSE](LICENSE).
+Vendored software/fonts retain their own MIT, ISC, BSD, Apache, dual MPL/Apache
+and OFL terms; the project MIT grant does not replace them. See [NOTICE](NOTICE)
+for full bundled-component attribution and
+[asset provenance](assets/PROVENANCE.md) for matching source builds, hashes,
+existing modifications and version-evidence limits. No bundled assets are
+upgraded by this preparation. Reserved Font Names and embedded legal notices
+remain intact.

@@ -1,4 +1,4 @@
-# Personal workflow package
+# agent-workflow
 
 This repository owns the portable engineering policy, one workflow skill, and native Claude Code and Antigravity role adapters. Runtime-specific installers consume these files; do not duplicate the policy into generated live configuration.
 
