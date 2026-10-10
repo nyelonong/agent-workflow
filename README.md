@@ -171,13 +171,11 @@ python3 -m py_compile scripts/install.py
 | Coverage | Status |
 | --- | --- |
 | Local | macOS, Python 3.11/3.13, Node 26 |
-| Proposed CI | Linux/macOS × Python 3.11/3.13, Node 22; **remote execution unverified** |
-| Windows / live runtime discovery | Not verified |
+| Linux / Windows / live runtime discovery | Not verified |
 | Tests | Unit + isolated integration: temporary Git repos, synthetic homes/config, stub reviewers, loopback HTTP; no real-home install, credentials, RDG or live upstream |
 | Optional host checks | Pi/Claude parity skips when absent; not proof of live compatibility |
-| CI safeguards | Isolated HOME/Git, pinned actions, contents-read, no secrets/deploy/publish; push/execution costs need separate authority |
 
-CI is optional automation—not required to publish the repository.
+No GitHub Actions workflow is provided; run the checks locally.
 
 ## License and assets
 
