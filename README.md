@@ -224,6 +224,7 @@ Explicit regeneration **writes this checkout's `policy.md`**:
 - Codex keeps the selected model; no automatic prewalk handoff. Phase skills: `adapters/codex/skills/`; shared workflow: `skills/workflow`.
 - Optional Claude/Antigravity prewalk: hooks inert until armed by a wrapper → stronger model until first edit → configured target. Flags/config/defaults control it; inspect before real model work. Existing permissions stay unchanged.
 - Task-review uses native skill roots: Codex `$task-review`, omp `skill://task-review`.
+- Every coding-agent runtime delegates plan and diff gate preparation/invocation to one bounded native subagent. Select the cheapest latest-stable eligible model from the current provider's available runtime scope using catalog evidence; do not hard-code an ID or silently fall back. The parent retains its model, exact-state verification, corrections, consumption and commits. Missing native delegation/model-selection/waiting support blocks the gate. This is an instruction-level rule, not runtime enforcement.
 - No credentials, MCP/model-router configuration, VCC/session migration, unrelated settings or remote-action authority supplied.
 
 ## Verification

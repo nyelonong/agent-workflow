@@ -11,6 +11,33 @@ Run it with the criterion the user approved for this unit and the repository pat
 
 The client is `scripts/task_review.py` in the repository that owns this skill; resolve it there, never from the tree under review. `review --criterion TEXT --repo ROOT [--paths a,b]` blocks until the human decides, `verify --repo ROOT [--paths a,b]` checks the recorded approval against the current tree, and `consume --repo ROOT` retires the approval after the commit. Any process that takes one JSON request argument and prints one JSON result line can serve as the reviewer; `TASK_REVIEW_REVIEWER` selects it and defaults to the bundled HTML page (`RDG_CONTROL_COMMAND` is still honored when it is unset), so the gate is how every runtime reaches its review surface.
 
+## Delegation
+
+Always delegate preparation and invocation of both `review` and `review-doc`
+to one bounded native subagent, following the [shared model-selection and authority
+policy](../../../../skills/task-review/SKILL.md#delegation). Select the cheapest
+latest-stable eligible model from the current provider's available runtime scope
+using catalog evidence, not a fixed ID or inherited parent default. Keep the
+parent's model unchanged. Use native child model controls; if delegation, model
+selection or supported waiting is unavailable, report the blocker and ask the
+user rather than running the gate in the parent or switching providers.
+
+Give the child the approved criterion, exact scope/document, owning client,
+verification evidence and private recovery directory. It may inspect code,
+author the advisory guide and run the canonical client; it may not edit reviewed
+inputs, widen scope, spawn children, stage, commit or consume approval. The gate
+runner executes directly and does not delegate again. It returns the URL,
+validated result, exit code, review ID and saved command/request/result records.
+The parent must inspect the canonical artifacts, apply annotations or stop
+decisions, and own exact-state verification and approval consumption. This is
+not independent code review and never replaces the human decision.
+
+The waiting/recovery instructions below apply to the delegated runner's command;
+the parent retains the child handle, relays the review URL and waits using native
+supported controls. A background shell command alone is not a subagent. Never
+infer approval from a child's summary or assume completion will wake a stopped
+parent turn.
+
 ## Guided diff view
 
 The HTML page keeps **Diff** selected by default and adds **Guided**. For nontrivial

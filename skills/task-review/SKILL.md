@@ -21,6 +21,61 @@ that state. It owns the diff; you never restate it.
   only supported way to reach it.
 - Read-only investigation, review, and verification need no gate.
 
+## Delegation
+
+In every coding-agent runtime, always delegate preparation and invocation of
+both `review` and `review-doc` to one bounded native subagent. This is a workflow
+requirement, not a runtime guard. A parent-owned background command with no
+subagent is not delegation. The delegated gate runner executes the client
+directly and must not delegate again.
+
+Before each new gate, the parent selects the model:
+
+- Inspect the runtime's executable agents and live available model catalog.
+- Restrict candidates to available tool-capable chat models in the parent's
+  **current provider**, active runtime model scope and applicable child model
+  restrictions. Treat an unrestricted scope as all available models; do not
+  infer the active scope solely from settings on disk.
+- Keep the latest stable available member of each documented model family,
+  then choose the lowest catalog input-plus-output token rate. This equal-token
+  comparison is a selection proxy, not a total-cost or subscription-quota claim.
+  Use current registry/catalog evidence for prices and family versions; model
+  names alone do not establish pricing or recency across families. Unknown
+  pricing is not free. Break price ties by documented recency.
+- Pass the selected exact native model identifier explicitly, with low supported
+  thinking, fresh context and no priority/fast mode. Inspect configured fallbacks too;
+  none may escape the provider, scope or selected cost/recency policy. Do not
+  pin model IDs in this skill, inherit the parent's expensive default, silently
+  upgrade, or switch providers. Missing evidence, no eligible model or a launch
+  failure blocks the gate; ask the user rather than bypassing delegation.
+
+Use an executable role with client-command and private-artifact permissions,
+not the independent code reviewer. Use native delegation and supported waiting;
+keep the parent's model unchanged. If delegation, explicit child model selection
+or waiting is unavailable, report that limitation and ask the user; do not emulate
+a subagent with a shell command or silently run the gate in the parent.
+Its packet must include the approved criterion, exact canonical repository/path
+scope or document, client location, verification evidence and a private recovery
+directory outside reviewed inputs.
+Permit code/diff inspection, advisory guide authoring and client-owned approval
+metadata only; forbid source/document edits, scope changes, nested delegation,
+staging, commits, approval consumption and external mutations.
+
+The child prepares any guide from the actual inspected changes, runs the
+canonical gate once, reports the browser URL while waiting, and returns the
+validated result, exit code, review ID and saved request/result/recovery paths.
+Retain the native run/command handle and cancellation path; recover that owned
+gate before relaunching. Child prose alone cannot establish approval. The parent checks the
+canonical artifacts and applies annotations or stop decisions; it still owns
+`verify`/`verify-doc`, `consume`/`consume-doc`, corrections and commits. This runner
+does not replace any required independent code review or human decision.
+
+In Pi, inspect `subagent({ action: "list", capabilities: true })` and
+`subagent({ action: "models" })`, copy an exact `provider/id`, and launch with
+fresh context and `async: true` through `subagent` or `runs.run` in one async
+workflow. A childless `runs.host` gate is not delegation. Other adapters own
+their native launch, model-selection and waiting mechanics.
+
 ## Guided diff view
 
 The bundled HTML page opens **Diff** by default and offers **Guided** beside it.
