@@ -11,6 +11,27 @@ Run it with the criterion the user approved for this unit and the repository pat
 
 The client is `scripts/task_review.py` in the repository that owns this skill; resolve it there, never from the tree under review. `review --criterion TEXT --repo ROOT [--paths a,b]` blocks until the human decides, `verify --repo ROOT [--paths a,b]` checks the recorded approval against the current tree, and `consume --repo ROOT` retires the approval after the commit. Any process that takes one JSON request argument and prints one JSON result line can serve as the reviewer; `TASK_REVIEW_REVIEWER` selects it and defaults to the bundled HTML page (`RDG_CONTROL_COMMAND` is still honored when it is unset), so the gate is how every runtime reaches its review surface.
 
+## Guided diff view
+
+The HTML page keeps **Diff** selected by default and adds **Guided**. For nontrivial
+diffs, author a local guide from inspected code: before/after behavior, optional
+ordered flow labels, and explained whole-file chapters ordered by logic and risk.
+Do not bury consequential database/security changes. Narration is advisory; the
+real complete diff and existing approval checks remain authoritative.
+
+Store the JSON outside reviewed repositories. Get the fingerprint using the exact
+scope with `status --json REQUEST` or `status --repo ROOT [--paths a,b]`; exit 1 is
+normal when no approval exists. Follow the guide schema/bounds in the harness
+README. Use canonical repository roots and current diff paths (rename destinations).
+Pass `review ... --guide PATH` or inline `guide` in the saved complete JSON request,
+never combine `--guide` with `--json`. Capture that request before launch and keep
+it unchanged; regenerate the guide after code or scope changes.
+
+Guide-bearing reviews require the bundled `html` backend. Invalid, stale, duplicate
+or unknown references fail; unassigned files remain under Other changes. Without a
+guide, Guided uses honestly labeled directory groups. Checkboxes track session-only
+reading, not approval. No model/network calls or document-review changes are added.
+
 ## Await the HTML decision
 
 Before launch, save the criterion, exact repository/path scope or document, checkout, branch, HEAD, pending phase and authorized next action. Use the existing plan's partial checkpoint when it can be updated before the snapshot; do not create a plan just for a review. Keep operational review files in a unique private local directory outside the reviewed tree, with directory mode 0700 and file mode 0600. Record its path in the checkpoint or supported session history, finish any checkpoint edits, then calculate and save the expected fingerprint in the private record. These files recover command execution; they are not a second plan or an approval source.

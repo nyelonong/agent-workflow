@@ -240,6 +240,26 @@ class PayloadLineNumberingTests(ReviewCase):
 # ---------------------------------------------------------------------------
 
 
+class GuidedPayloadTests(ReviewCase):
+    def test_guide_resolves_captured_scope_without_changing_actual_diff(self):
+        plain = html_review.build_payload(self.request)
+        value = {
+            "version": 1,
+            "fingerprint": task_review.collect_snapshot(self.request.repositories).fingerprint,
+            "summary": "<script>literal text</script>", "before": "One printed line", "after": "Two printed lines",
+            "chapters": [{"title": "Core output", "summary": "Print the second value",
+                          "files": [{"repository": str(self.root), "path": "a.py"}]}],
+        }
+        guided = html_review.build_payload(review_request(str(self.root), guide=value))
+        self.assertEqual(plain["repositories"], guided["repositories"])
+        self.assertEqual(plain["totals"], guided["totals"])
+        self.assertEqual([[0], [1]], [chapter["file_indices"] for chapter in guided["guide"]["chapters"]])
+        self.assertEqual(value["summary"], guided["guide"]["summary"])
+        (self.root / "a.py").write_text("changed again\n")
+        with self.assertRaisesRegex(task_review.ResultError, "stale"):
+            html_review.build_payload(review_request(str(self.root), guide=value))
+
+
 class RequestValidationTests(ReviewCase):
     def run_reviewer(self, *args: str, stdin: str = "") -> subprocess.CompletedProcess:
         return subprocess.run(

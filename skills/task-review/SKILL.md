@@ -21,6 +21,30 @@ that state. It owns the diff; you never restate it.
   only supported way to reach it.
 - Read-only investigation, review, and verification need no gate.
 
+## Guided diff view
+
+The bundled HTML page opens **Diff** by default and offers **Guided** beside it.
+For a nontrivial diff, prepare an agent-authored guide from inspected code before
+launching the gate: before/after behavior, optional ordered flow labels, and
+whole-file chapters with explanations. Order chapters by the change's logic and
+review risk; do not bury consequential database or security changes as boilerplate.
+The actual diff remains authoritative; the guide is advisory, not a replacement
+for complete diff review or proof that the explanation is true.
+
+Store guide JSON in a private location outside the reviewed repositories. Use
+`status --repo ROOT [--paths a,b]` (or `status --json REQUEST`) to obtain the scoped
+fingerprint; its non-approval exit is normal. Pass `review ... --guide PATH`, or
+include `guide` in the complete JSON request, never both. Follow the versioned
+format and bounds in the owning repository's README. Use canonical repository
+roots and captured current paths, including rename destinations; regenerate the
+guide after code/scope changes. Duplicate/out-of-scope references and stale guides
+fail; omitted scoped files remain visible under Other changes.
+
+No harness model/network calls are made. Without an authored guide, Guided uses
+honestly labeled directory groups. Chapter checkboxes are session-only reading
+progress, not decisions or exemptions. Guide-bearing reviews require the bundled
+`html` backend; leave existing non-HTML and document flows unchanged.
+
 ## Waiting and recovery
 
 Before capture, retain the criterion, exact scope/document, authorized phase and recovery location in supported history or an existing plan. Keep private command records outside the reviewed tree; do not create a plan merely to wait. Native adapters own command handles and waiting. Keep reviewed inputs unchanged through approval verification and use/consumption; record interim operational state externally. Recover the original command and result before relaunching. Unknown ownership or consequential outcome blocks replay and progression; it never implies approval.

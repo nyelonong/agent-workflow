@@ -35,7 +35,7 @@ import stat
 import subprocess
 import sys
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -52,6 +52,7 @@ RDG_REVIEWER = "rdg"
 DEFAULT_REVIEWER = HTML_REVIEWER
 TIMEOUT_ENV = "TASK_REVIEW_TIMEOUT"
 DEFAULT_TIMEOUT_SECONDS = 1800
+MAX_GUIDE_BYTES = 48 * 1024
 
 EXIT_OK = 0
 EXIT_NOT_APPROVED = 1
@@ -218,14 +219,18 @@ class ReviewRequest:
     review_id: str
     criterion: str
     repositories: tuple[Repository, ...]
+    guide: "dict[str, Any] | None" = None
 
     def payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "version": self.version,
             "review_id": self.review_id,
             "criterion": self.criterion,
             "repositories": [repository.payload() for repository in self.repositories],
         }
+        if self.guide is not None:
+            payload["guide"] = self.guide
+        return payload
 
     def to_json(self) -> str:
         return json.dumps(self.payload(), separators=(",", ":"))
@@ -309,6 +314,90 @@ def normalize_repository(value: Any) -> Repository:
     return Repository(root=normalize_root(value["root"]), paths=normalize_paths(value.get("paths")))
 
 
+def normalize_guide(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ResultError("guide must be an object")
+    if len(json.dumps(value, ensure_ascii=True).encode("utf-8")) > MAX_GUIDE_BYTES:
+        raise ResultError("guide exceeds the 48 KiB limit")
+    required = {"version", "fingerprint", "summary", "before", "after", "chapters"}
+    if not required <= value.keys() or set(value) - required - {"flow"}:
+        raise ResultError("guide needs version, fingerprint, summary, before, after and chapters; only flow is optional")
+    if type(value["version"]) is not int or value["version"] != 1:
+        raise ResultError("unsupported guide version")
+    if not isinstance(value["fingerprint"], str) or not re.fullmatch(r"[0-9a-f]{64}", value["fingerprint"]):
+        raise ResultError("guide needs a scoped diff fingerprint")
+
+    def text(item: Any, name: str, limit: int = 8000) -> str:
+        if not isinstance(item, str) or not item.strip() or len(item) > limit:
+            raise ResultError(f"guide {name} must be non-empty text of at most {limit} characters")
+        return item
+
+    normalized = {"version": 1, "fingerprint": value["fingerprint"]}
+    for key in ("summary", "before", "after"):
+        normalized[key] = text(value[key], key)
+    if "flow" in value:
+        flow = value["flow"]
+        if not isinstance(flow, dict) or set(flow) != {"before", "after"}:
+            raise ResultError("guide flow needs before and after label lists")
+        normalized["flow"] = {}
+        for side in ("before", "after"):
+            labels = flow[side]
+            if not isinstance(labels, list) or not 1 <= len(labels) <= 20:
+                raise ResultError("guide flow needs 1–20 labels per side")
+            normalized["flow"][side] = [text(label, "flow label", 200) for label in labels]
+    chapters = value["chapters"]
+    if not isinstance(chapters, list) or len(chapters) > 128:
+        raise ResultError("guide chapters must be a list of at most 128 chapters")
+    normalized["chapters"] = []
+    seen = set()
+    for chapter in chapters:
+        if not isinstance(chapter, dict) or set(chapter) != {"title", "summary", "files"}:
+            raise ResultError("each guide chapter needs title, summary and files")
+        files = chapter["files"]
+        if not isinstance(files, list) or not files:
+            raise ResultError("each guide chapter needs at least one file")
+        references = []
+        for reference in files:
+            if not isinstance(reference, dict) or set(reference) != {"repository", "path"}:
+                raise ResultError("guide file references need repository and path")
+            root = normalize_root(reference["repository"])
+            path = normalize_paths([reference["path"]])[0]
+            identity = (root, path)
+            if identity in seen:
+                raise ResultError(f"duplicate guide file reference: {path}")
+            seen.add(identity)
+            references.append({"repository": root, "path": path})
+        normalized["chapters"].append({
+            "title": text(chapter["title"], "chapter title", 200),
+            "summary": text(chapter["summary"], "chapter summary"),
+            "files": references,
+        })
+    if len(json.dumps(normalized).encode("utf-8")) > MAX_GUIDE_BYTES:
+        raise ResultError("guide exceeds the 48 KiB limit")
+    return normalized
+
+
+def read_guide(path: str) -> dict[str, Any]:
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(MAX_GUIDE_BYTES + 1)
+        if len(raw) > MAX_GUIDE_BYTES:
+            raise ResultError("guide exceeds the 48 KiB limit")
+        return normalize_guide(json.loads(raw.decode("utf-8")))
+    except (OSError, UnicodeError, ValueError) as error:
+        raise UsageError(f"unable to read guide: {error}") from None
+
+
+def validate_guide_snapshot(guide: dict[str, Any], snapshot: "Snapshot") -> None:
+    if guide["fingerprint"] != snapshot.fingerprint:
+        raise ResultError("guide is stale or has a different scope; regenerate it for the current scoped diff")
+    available = {(repo.root, file.path) for repo in snapshot.repositories for file in repo.files}
+    for chapter in guide["chapters"]:
+        for reference in chapter["files"]:
+            if (reference["repository"], reference["path"]) not in available:
+                raise ResultError(f"guide references a file outside the captured diff: {reference['path']}")
+
+
 def normalize_request(payload: Any, *, require_review_fields: bool = True) -> ReviewRequest:
     """Validates a decoded ReviewRequest against the protocol.
 
@@ -343,6 +432,7 @@ def normalize_request(payload: Any, *, require_review_fields: bool = True) -> Re
         review_id=review_id,
         criterion=criterion,
         repositories=tuple(normalized),
+        guide=normalize_guide(payload["guide"]) if "guide" in payload else None,
     )
 
 
@@ -1016,6 +1106,10 @@ def command_review(
     )
     try:
         snapshot = collect_snapshot(request.repositories, git)
+        if request.guide is not None:
+            if launcher != HTML_REVIEWER:
+                raise UsageError("guided reviews require TASK_REVIEW_REVIEWER=html")
+            validate_guide_snapshot(request.guide, snapshot)
         stdout = launch(launcher, request.to_json(), timeout)
         result = parse_review_result(stdout, request.review_id)
         validate_decision_semantics(result)
@@ -1287,13 +1381,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     review = commands.add_parser("review", help="open a review and wait for a human decision")
     review.add_argument("--criterion", required=False, metavar="TEXT")
+    review.add_argument("--guide", metavar="PATH", help="local authored guide JSON for the HTML Guided tab")
     add_repository_arguments(review, paths=True, required=False)
 
     verify = commands.add_parser("verify", help="approve only when a matching approval is recorded")
     add_repository_arguments(verify, paths=True, required=False)
 
     status = commands.add_parser("status", help="print the newest ledger entry and the fingerprint match")
-    add_repository_arguments(status, paths=False, required=False)
+    add_repository_arguments(status, paths=True, required=False)
 
     consume = commands.add_parser("consume", help="record that an approval was spent by a commit")
     add_repository_arguments(consume, paths=False, required=True)
@@ -1356,7 +1451,7 @@ def dispatch(
     if args.command in ("review-doc", "verify-doc", "consume-doc"):
         return dispatch_document(args, environ, git=git, launch=launch_doc or launch_document)
     if args.command == "review":
-        require_no_json_with_flags(args, "criterion", "repo", "paths")
+        require_no_json_with_flags(args, "criterion", "repo", "paths", "guide")
         if args.json is not None:
             request = parse_request_json(args.json)
         else:
@@ -1365,6 +1460,8 @@ def dispatch(
             if not args.repo:
                 raise UsageError("review needs --repo ROOT")
             request = build_request(args.criterion, repositories_from_options(args))
+            if args.guide is not None:
+                request = replace(request, guide=read_guide(args.guide))
         return command_review(
             request,
             git=git,

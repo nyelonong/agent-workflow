@@ -371,6 +371,8 @@ def build_payload(
     git: GitRunner = task_review.run_git,
 ) -> dict[str, Any]:
     """The review document the page renders: criterion, repositories, diff."""
+    if request.guide is not None:
+        task_review.validate_guide_snapshot(request.guide, task_review.collect_snapshot(request.repositories, git))
     repositories = []
     total_files = total_added = total_removed = 0
     for repository in request.repositories:
@@ -395,7 +397,47 @@ def build_payload(
         "criterion": request.criterion,
         "repositories": repositories,
         "totals": {"files": total_files, "added": total_added, "removed": total_removed},
+        "guide": build_guide(request.guide, repositories),
     }
+
+
+def build_guide(guide: "dict[str, Any] | None", repositories: list[dict[str, Any]]) -> dict[str, Any]:
+    files = [file for repo in repositories for file in repo["files"]]
+    indices = {(file["repository"], file["path"]): index for index, file in enumerate(files)}
+    chapters = []
+    covered = set()
+    if guide is not None:
+        for chapter in guide["chapters"]:
+            members = []
+            for reference in chapter["files"]:
+                identity = (reference["repository"], reference["path"])
+                if identity not in indices:
+                    raise task_review.ResultError(f"guide references a file outside the captured diff: {reference['path']}")
+                index = indices[identity]
+                if index in covered:
+                    raise task_review.ResultError(f"duplicate guide file reference: {reference['path']}")
+                covered.add(index)
+                members.append(index)
+            chapters.append({"title": chapter["title"], "summary": chapter["summary"], "file_indices": members})
+        remaining = [index for index in range(len(files)) if index not in covered]
+        if remaining:
+            chapters.append({"title": "Other changes", "summary": "These files were not assigned to an authored chapter. Review them too.", "file_indices": remaining})
+    else:
+        groups: dict[tuple[str, str], list[int]] = {}
+        for index, file in enumerate(files):
+            directory = file["path"].rsplit("/", 1)[0] if "/" in file["path"] else "Root files"
+            groups.setdefault((file["repository"], directory), []).append(index)
+        for (root, directory), members in groups.items():
+            title = f"{root} · {directory}" if len(repositories) > 1 else directory
+            chapters.append({"title": title, "summary": "Grouped by directory, not by behavior.", "file_indices": members})
+    result = {"authored": guide is not None, "chapters": chapters}
+    if guide is not None:
+        for key in ("summary", "before", "after", "flow"):
+            if key in guide:
+                result[key] = guide[key]
+    else:
+        result["summary"] = "No agent-authored guide was supplied. These directory groups show every scoped file without inferring what the change does."
+    return result
 
 
 def parse_document_request(text: str) -> task_review.DocumentRequest:
@@ -893,7 +935,34 @@ body.document #current-file{display:none}
 .word-change{color:inherit; border-radius:2px}
 .row.add .word-change{background:var(--add-line)}
 .row.remove .word-change{background:var(--del-line)}
-body.document .diff-view-controls,body.document #wrap-lines{display:none}
+body.document .diff-view-controls,body.document #wrap-lines,body.document #review-tabs{display:none}
+#review-tabs{display:flex; gap:4px}
+#review-tabs [aria-selected="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--fg)}
+#review-pane{container-type:inline-size}
+.guide-overview{padding:20px; margin-bottom:24px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface)}
+.guide-overview h2,.guide-context h2{font-size:18px; color:var(--fg); text-transform:none; letter-spacing:-.01em; margin:0 0 10px}
+.guide-overview p,.guide-context p{white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65}
+.guide-note{font-size:13px; color:var(--muted)}
+.guide-comparison{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin-top:18px}
+.guide-side{padding:14px; border:1px solid var(--line); border-radius:var(--r-sm); background:var(--sunken)}
+.guide-side h3{margin:0; font-size:14px}
+.guide-side.after{border-color:var(--add-line); background:var(--add-bg)}
+.guide-flow{display:flex; flex-wrap:wrap; gap:10px; padding:0; list-style:none}
+.guide-flow li{border:1px solid var(--line); border-radius:5px; padding:6px 9px; font:13px/1.5 var(--mono); overflow-wrap:anywhere}
+.guide-flow li:not(:last-child)::after{content:" →"; color:var(--muted)}
+.guide-chapter{display:grid; grid-template-columns:minmax(200px,1fr) minmax(0,2.3fr); gap:22px; margin-bottom:32px; scroll-margin-top:10px}
+.guide-context{position:sticky; top:0; align-self:start; padding:8px 0}
+.guide-context .guide-position{font:13px/1.5 var(--mono); color:var(--muted)}
+.guide-progress{display:flex; gap:7px; align-items:center; font-size:13px; color:var(--muted); margin:12px 0}
+.guide-progress input{width:auto}
+.guide-files{display:flex; flex-direction:column; gap:6px}
+.guide-files button{text-align:left; overflow-wrap:anywhere; white-space:normal; font:13px/1.5 var(--mono)}
+.guide-code{min-width:0}
+@container(max-width:900px){
+  .guide-chapter{grid-template-columns:minmax(0,1fr); gap:10px}
+  .guide-context{position:static}
+}
+@container(max-width:500px){.guide-comparison{grid-template-columns:minmax(0,1fr)}}
 @keyframes flash{from{background:var(--accent-soft)} to{background:transparent}}
 
 /* --------------------------------------------------------------- threads */
@@ -1097,6 +1166,10 @@ body.document .doc b{font-weight:700} body.document .doc i{font-style:italic} bo
   </details>
 </header>
 <div id="toolbar">
+  <div id="review-tabs" role="tablist" aria-label="Review view">
+    <button id="tab-diff" class="tiny" role="tab" aria-selected="true" aria-controls="diff">Diff</button>
+    <button id="tab-guided" class="tiny" role="tab" aria-selected="false" aria-controls="diff" tabindex="-1">Guided</button>
+  </div>
   <input id="file-filter" type="search" placeholder="Filter files&hellip;" aria-label="Filter files by path" spellcheck="false">
   <button id="expand-all" class="tiny">Expand all</button>
   <button id="collapse-all" class="tiny">Collapse all</button>
@@ -1232,6 +1305,9 @@ const state = {
   changeLocation: null,
   commentsCollapsed: false,
   diffView: "inline",
+  reviewView: "diff",
+  reviewScroll: {},
+  reviewedChapters: new Set(),
   wrapLines: true,
   dragging: false,
   threads: [],
@@ -1304,8 +1380,10 @@ async function sendDecision(decision) {
 
 function visibleFiles() {
   const needle = state.filter.trim().toLowerCase();
-  if (!needle) return state.files;
-  return state.files.filter((file) => file.path.toLowerCase().includes(needle));
+  const files = needle ? state.files.filter((file) => file.path.toLowerCase().includes(needle)) : state.files;
+  if (state.reviewView !== "guided" || !state.data?.guide) return files;
+  const shown = new Set(files);
+  return state.data.guide.chapters.flatMap(chapter => chapter.file_indices.map(index => state.files[index])).filter(file => shown.has(file));
 }
 
 function openCountFor(file) {
@@ -1484,7 +1562,7 @@ function renderFiles() {
 function trackFile() {
   if (boot.mode === "document") return;
   const host = el("diff");
-  const blocks = Array.from(host.children).filter((block) => block.classList.contains("file"));
+  const blocks = Array.from(host.querySelectorAll(".file"));
   const top = host.getBoundingClientRect().top;
   const location = state.changeLocation;
   const destination = location && Math.abs(host.scrollTop - location.scrollTop) < 1 && blocks.find((block) => Number(block.dataset.file) === location.fileIndex);
@@ -1848,14 +1926,135 @@ function onSelectionEnter(event) {
   return true;
 }
 
+function setReviewView(view) {
+  if (boot.mode === "document" || state.submitted || state.dialog || !["diff", "guided"].includes(view) || state.reviewView === view) return;
+  state.reviewScroll ||= {};
+  state.reviewScroll[state.reviewView] = el("diff").scrollTop;
+  state.reviewView = view;
+  state.dragging = false;
+  for (const name of ["diff", "guided"]) {
+    const tab = el("tab-" + name);
+    tab.setAttribute("aria-selected", name === view ? "true" : "false");
+    tab.tabIndex = name === view ? 0 : -1;
+  }
+  renderFiles();
+  renderDiff();
+  el("diff").scrollTop = state.reviewScroll[view] || 0;
+  trackFile();
+}
+
+function onReviewTabKey(event) {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || state.submitted || state.dialog) return;
+  event.preventDefault();
+  const view = event.key === "Home" ? "diff" : event.key === "End" ? "guided" : state.reviewView === "diff" ? "guided" : "diff";
+  setReviewView(view);
+  el("tab-" + view).focus();
+}
+
+function renderGuideOverview(host) {
+  const guide = state.data.guide;
+  const overview = document.createElement("section");
+  overview.className = "guide-overview";
+  const title = document.createElement("h2");
+  title.textContent = "Overview";
+  const note = document.createElement("p");
+  note.className = "guide-note";
+  note.textContent = guide.authored ? "Agent-authored explanation · Check the actual diff; this is not verified behavior." : "Directory grouping · No authored explanation";
+  const summary = document.createElement("p");
+  summary.textContent = guide.summary;
+  overview.append(title, note, summary);
+  if (guide.authored) {
+    const comparison = document.createElement("div");
+    comparison.className = "guide-comparison";
+    for (const side of ["before", "after"]) {
+      const card = document.createElement("section");
+      card.className = "guide-side " + side;
+      const heading = document.createElement("h3");
+      heading.textContent = side === "before" ? "Before" : "After";
+      const description = document.createElement("p");
+      description.textContent = guide[side];
+      card.append(heading, description);
+      if (guide.flow) {
+        const flow = document.createElement("ol");
+        flow.className = "guide-flow";
+        flow.setAttribute("aria-label", heading.textContent + " flow");
+        for (const text of guide.flow[side]) {
+          const label = document.createElement("li");
+          label.textContent = text;
+          flow.appendChild(label);
+        }
+        card.appendChild(flow);
+      }
+      comparison.appendChild(card);
+    }
+    overview.appendChild(comparison);
+  }
+  host.appendChild(overview);
+}
+
+function renderGuidedDiff(host) {
+  renderGuideOverview(host);
+  const guide = state.data.guide;
+  const shown = new Set(visibleFiles());
+  guide.chapters.forEach((chapter, chapterIndex) => {
+    const files = chapter.file_indices.map(index => state.files[index]).filter(file => shown.has(file));
+    if (!files.length) return;
+    const section = document.createElement("section");
+    section.className = "guide-chapter";
+    const context = document.createElement("div");
+    context.className = "guide-context";
+    const position = document.createElement("p");
+    position.className = "guide-position";
+    position.textContent = "Chapter " + (chapterIndex + 1) + " / " + guide.chapters.length;
+    const title = document.createElement("h2");
+    title.textContent = chapter.title;
+    const summary = document.createElement("p");
+    summary.textContent = chapter.summary;
+    const progress = document.createElement("label");
+    progress.className = "guide-progress";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = state.reviewedChapters.has(chapterIndex);
+    checkbox.disabled = state.submitted;
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) state.reviewedChapters.add(chapterIndex); else state.reviewedChapters.delete(chapterIndex);
+    });
+    const label = document.createElement("span");
+    label.textContent = "Reviewed chapter (reading progress only)";
+    progress.append(checkbox, label);
+    const list = document.createElement("div");
+    list.className = "guide-files";
+    const code = document.createElement("div");
+    code.className = "guide-code";
+    for (const file of files) {
+      const index = state.files.indexOf(file);
+      const link = document.createElement("button");
+      link.className = "tiny ghost";
+      link.textContent = file.path + "  +" + file.added + " / -" + file.removed;
+      link.addEventListener("click", () => {
+        state.expanded.add(index);
+        renderDiff();
+        el("diff").querySelector('.file[data-file="' + index + '"]').scrollIntoView({block: "start"});
+        el("diff").focus({preventScroll: true});
+      });
+      list.appendChild(link);
+      code.appendChild(renderFileDiff(file));
+    }
+    context.append(position, title, summary, progress, list);
+    section.append(context, code);
+    host.appendChild(section);
+  });
+}
+
 function renderDiff() {
   state.changeLocation = null;
   state.changeStops = collectChangeStops();
   const host = el("diff");
   host.textContent = "";
-  host.className = "";
+  host.className = state.reviewView === "guided" ? "guided" : "";
   host.tabIndex = 0;
-  host.setAttribute("role", "region");
+  host.setAttribute("role", "tabpanel");
+  host.setAttribute("aria-labelledby", state.reviewView === "guided" ? "tab-guided" : "tab-diff");
   host.setAttribute("aria-label", "Code diff. Arrow keys select lines; Shift extends a range; Enter comments.");
   if (!state.files.length) {
     const empty = document.createElement("div");
@@ -1866,7 +2065,20 @@ function renderDiff() {
     trackFile();
     return;
   }
-  visibleFiles().forEach((file) => {
+  if (state.reviewView === "guided") renderGuidedDiff(host);
+  else visibleFiles().forEach(file => host.appendChild(renderFileDiff(file)));
+  if (!visibleFiles().length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "No file matches that filter.";
+    host.appendChild(empty);
+  }
+  markThreadedRows();
+  paintSelection();
+  trackFile();
+}
+
+function renderFileDiff(file) {
     const fileIndex = state.files.indexOf(file);
     const open = state.expanded.has(fileIndex);
     const block = document.createElement("article");
@@ -1953,11 +2165,7 @@ function renderDiff() {
       }
       block.appendChild(rows);
     }
-    host.appendChild(block);
-  });
-  markThreadedRows();
-  paintSelection();
-  trackFile();
+    return block;
 }
 
 // A commented line carries a dot in the gutter, so the diff itself shows where
@@ -2690,6 +2898,10 @@ el("collapse-all").addEventListener("click", () => {
   renderDiff();
 });
 el("comments-toggle").addEventListener("click", () => setCommentsCollapsed(!state.commentsCollapsed));
+for (const view of ["diff", "guided"]) {
+  el("tab-" + view).addEventListener("click", () => setReviewView(view));
+  el("tab-" + view).addEventListener("keydown", onReviewTabKey);
+}
 el("view-inline").addEventListener("click", () => setDiffView("inline"));
 el("view-split").addEventListener("click", () => setDiffView("split"));
 el("wrap-lines").addEventListener("click", () => setWrapLines(!state.wrapLines));

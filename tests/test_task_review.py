@@ -874,5 +874,97 @@ class DocumentCommandTests(unittest.TestCase):
         self.assertEqual(task_review.EXIT_OK, verified.returncode, verified.stdout + verified.stderr)
 
 
+class GuidedReviewTests(ReviewCase):
+    def guide(self) -> dict:
+        request = task_review.build_request("ship it", [task_review.Repository(str(self.root), ["a.py"])])
+        return {
+            "version": 1, "fingerprint": task_review.collect_snapshot(request.repositories).fingerprint,
+            "summary": "Print a different value", "before": "Print one", "after": "Print two",
+            "chapters": [{"title": "Output", "summary": "Change the printed value",
+                          "files": [{"repository": str(self.root), "path": "a.py"}]}],
+        }
+
+    def invoke(self, *arguments: str, launch=None) -> tuple[int, str, str]:
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = task_review.main(list(arguments), {task_review.REVIEWER_ENV: "html"}, launch=launch or self.approve)
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    @staticmethod
+    def approve(launcher, request_json, timeout):
+        request = json.loads(request_json)
+        return json.dumps({"version": "1", "review_id": request["review_id"], "decision": "approve", "annotations": []}).encode()
+
+    def test_status_accepts_paths_and_returns_the_scoped_guide_fingerprint(self):
+        expected = self.guide()["fingerprint"]
+        result = self.run_client("status", "--repo", str(self.root), "--paths", "a.py")
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, result.returncode, result.stderr)
+        self.assertEqual(expected, json.loads(result.stdout)["fingerprint"])
+
+    def test_cli_captures_guide_once_and_existing_verification_still_checks_code(self):
+        value = self.guide()
+        path = self.base / "guide.json"
+        path.write_text(json.dumps(value))
+
+        def launch(launcher, request_json, timeout):
+            captured = json.loads(request_json)
+            path.write_text("changed after capture")
+            self.assertEqual(value, captured["guide"])
+            return self.approve(launcher, request_json, timeout)
+
+        code, out, error = self.invoke("review", "--criterion", "ship it", "--repo", str(self.root), "--paths", "a.py", "--guide", str(path), launch=launch)
+        self.assertEqual(task_review.EXIT_OK, code, out + error)
+        self.assertEqual(task_review.EXIT_OK, self.verify("--paths", "a.py").returncode)
+        self.write("a.py", "changed after approval\n")
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, self.verify("--paths", "a.py").returncode)
+
+    def test_inline_guide_round_trip_and_mid_review_mutation_fails_closed(self):
+        request = task_review.build_request("ship it", [task_review.Repository(str(self.root), ["a.py"])])
+        payload = {**request.payload(), "guide": self.guide()}
+
+        def launch(launcher, request_json, timeout):
+            self.assertEqual(payload["guide"], json.loads(request_json)["guide"])
+            self.write("a.py", "mutated during review\n")
+            return self.approve(launcher, request_json, timeout)
+
+        code, out, error = self.invoke("review", "--json", json.dumps(payload), launch=launch)
+        self.assertEqual(task_review.EXIT_ERROR, code)
+        self.assertIn("changed while the human", error)
+        self.assertEqual("", out)
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, self.verify("--paths", "a.py").returncode)
+
+    def test_stale_unknown_and_non_html_guides_never_reach_a_launcher(self):
+        request = task_review.build_request("ship it", [task_review.Repository(str(self.root), ["a.py"])])
+        for problem in ("stale", "unknown", "backend"):
+            with self.subTest(problem=problem):
+                value = self.guide()
+                launcher = "html"
+                if problem == "stale":
+                    value["fingerprint"] = "b" * 64
+                elif problem == "unknown":
+                    value["chapters"][0]["files"][0]["path"] = "untracked.txt"
+                else:
+                    launcher = "rdg"
+                guided = task_review.normalize_request({**request.payload(), "guide": value})
+                with self.assertRaises(task_review.TaskReviewError):
+                    task_review.command_review(guided, git=task_review.run_git, launch=lambda *args: self.fail("invalid guide reached launcher"), launcher=launcher, timeout=1)
+                self.assertEqual(task_review.EXIT_NOT_APPROVED, self.verify("--paths", "a.py").returncode)
+
+    def test_bad_files_and_conflicting_flags_report_local_errors(self):
+        path = self.base / "guide.json"
+        for content in (b"not JSON", b"\xff", b"x" * (task_review.MAX_GUIDE_BYTES + 1)):
+            path.write_bytes(content)
+            code, out, error = self.invoke("review", "--criterion", "ship it", "--repo", str(self.root), "--guide", str(path))
+            self.assertEqual(task_review.EXIT_ERROR, code, out)
+            self.assertIn("guide", error)
+        path.unlink()
+        with self.assertRaisesRegex(task_review.UsageError, "unable to read guide"):
+            task_review.read_guide(str(path))
+        request = task_review.build_request("ship it", [task_review.Repository(str(self.root))])
+        code, out, error = self.invoke("review", "--json", request.to_json(), "--guide", str(path))
+        self.assertEqual(task_review.EXIT_ERROR, code, out)
+        self.assertIn("--guide", error)
+
+
 if __name__ == "__main__":
     unittest.main()

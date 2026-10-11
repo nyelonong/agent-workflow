@@ -41,6 +41,62 @@ python3 "$HARNESS/scripts/task_review.py" review \
 | **Return to planning** | Stop; revisit scope/plan |
 | **Cancelled** | Stop |
 
+### Guided tab (HTML)
+
+**Diff** remains the default. **Guided** shows an overview, before/after cards,
+optional flow labels, and explained chapters beside the same real diffs. Comments,
+drafts, layout controls and approval checks are shared. Chapter checkboxes track
+reading only, for this page session; they are not approval.
+
+For semantic chapters, the calling agent authors a local JSON guide after inspecting
+the change. No model or network call is made by the harness. Store the guide outside
+the reviewed repository. Get the current fingerprint with the **same repo/path scope**:
+
+```sh
+python3 "$HARNESS/scripts/task_review.py" status --repo "$TARGET" --paths src/example.py,tests/test_example.py
+# Exit 1 is normal when no approval exists; read the fingerprint in its JSON output.
+python3 "$HARNESS/scripts/task_review.py" review \
+  --criterion "The approved change and its tests are correct" \
+  --repo "$TARGET" --paths src/example.py,tests/test_example.py \
+  --guide /absolute/private/path/guide.json
+```
+
+Guide format (replace the fingerprint and repository root):
+
+```json
+{
+  "version": 1,
+  "fingerprint": "<64-character scoped fingerprint from status>",
+  "summary": "What this change achieves",
+  "before": "The previous behavior",
+  "after": "The new behavior",
+  "flow": {"before": ["Input", "Old path"], "after": ["Input", "New path", "Result"]},
+  "chapters": [
+    {
+      "title": "Core change",
+      "summary": "Why these files belong together and what to inspect",
+      "files": [{"repository": "/absolute/repository/root", "path": "src/example.py"}]
+    }
+  ]
+}
+```
+
+- Only `flow` is optional. Guide version is integer `1`; total serialized size is
+  at most 48 KiB. Text fields allow 8,000 characters, titles/flow labels 200;
+  at most 128 chapters and 1–20 flow labels per side. Each chapter has at least one file.
+- File references use canonical repository roots and current diff paths (rename
+  destinations), never old paths. Unknown or duplicate references fail locally;
+  unassigned scoped files appear under **Other changes**.
+- Explanations are labeled **Agent-authored**, not verified behavior. A stale
+  fingerprint fails; regenerate after code or scope changes. Narration is captured
+  once and is advisory, not part of the existing code-approval fingerprint/ledger.
+- Without a guide, Guided offers explicitly labeled directory groups, not invented
+  behavior explanations. All existing guide-free callers continue working.
+- `--guide` and `--json` cannot be combined; complete JSON review requests may carry
+  an inline `guide` object. Guide-bearing reviews require the bundled `html` backend;
+  other backends fail explicitly rather than silently ignoring it.
+- Document reviews are unchanged.
+
 ### 2. Verify and commit
 
 ```text

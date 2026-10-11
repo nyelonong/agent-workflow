@@ -181,6 +181,8 @@ class Element {
   scrollIntoView() { this.scrolled = true; if (this.onScroll) this.onScroll(); }
   focus() { this.focused = true; }
   matches(selector) {
+    const tag = /^[a-z][a-z0-9-]*/i.exec(selector);
+    if (tag && this.tagName !== tag[0].toUpperCase()) return false;
     const className = /^\.([\w-]+)/.exec(selector);
     if (className && !this.classes.has(className[1])) return false;
     return [...selector.matchAll(/\[data-([\w-]+)(?:="([^"]*)")?\]/g)]
@@ -197,18 +199,19 @@ class Element {
 function page(lines) {
   const ui = Object.fromEntries(['diff', 'files', 'current-file', 'current-file-path', 'current-file-position',
     'view-inline', 'view-split', 'wrap-lines', 'file-filter', 'composer', 'composer-text', 'composer-where', 'help', 'message',
-    'previous-change', 'next-change', 'change-position'].map(id => [id, new Element()]));
+    'previous-change', 'next-change', 'change-position', 'tab-diff', 'tab-guided'].map(id => [id, new Element()]));
   ui.composer.hidden = true;
   ui.help.hidden = true;
   const state = {files: [{repository: '/repo', path: 'src/example.js', status: 'modified', added: 1, removed: 1, lines}],
-    threads: [], expanded: new Set([0]), diffView: 'split', wrapLines: true, selection: null, painted: [], dragging: false, filter: ''};
+    threads: [], expanded: new Set([0]), diffView: 'split', reviewView: 'diff', reviewedChapters: new Set(), wrapLines: true, selection: null, painted: [], dragging: false, filter: ''};
   const context = {state, boot: {mode: 'diff', maxLines: 1500}, ReviewDiff: {pairLines, rangeFor, wordRanges, moveSelection},
     el: id => ui[id], document: {createElement: tag => new Element(tag), createTextNode: text => new TextNode(text), querySelector: selector => ui.diff.querySelector(selector)},
     lineTokens: () => null, fileIcon: () => new Element(), statusClass: () => '',
     getComputedStyle: node => ({scrollMarginTop: node.dataset.row === undefined ? '0px' : '44px'}),
     hideComposer() {}, setCommentsCollapsed() {}, renderFiles() {},
     visibleFiles: () => state.files.filter(file => file.path.includes(state.filter))};
-  const functions = ['sideNumber', 'pathLabel', 'makeRow', 'makeSideCell', 'diffRow', 'setDiffView', 'renderDiff',
+  const functions = ['sideNumber', 'pathLabel', 'makeRow', 'makeSideCell', 'diffRow', 'setDiffView', 'renderDiff', 'renderFileDiff',
+    'setReviewView', 'onReviewTabKey', 'renderGuideOverview', 'renderGuidedDiff', 'visibleFiles',
     'markThreadedRows', 'lineNumberFor', 'paintSelection', 'onRowPress', 'extendDiffSelection', 'selectionTarget',
     'jumpToThread', 'trackFile', 'markCodeChanges', 'readingPosition', 'restoreReadingPosition', 'setWrapLines',
     'onDiffKey', 'onSelectionEnter', 'showComposer', 'say', 'collectChangeStops', 'changeElement', 'trackChanges', 'stepChange'];
@@ -514,4 +517,121 @@ test('clamped jumps advance the destination until manual scrolling resumes viewp
     assert.equal(ui['change-position'].textContent, 'Change 1 of 2');
     assert.equal(ui['next-change'].disabled, false);
   }
+});
+
+function guidedPage(layout = 'split') {
+  const fixture = changePage(layout);
+  const {state} = fixture;
+  state.data = {guide: {authored: true, summary: 'Share external content', before: 'No sharing', after: 'Sharing enabled',
+    flow: {before: ['Content'], after: ['Content', 'Inbox', 'Thread']}, chapters: [
+      {title: 'Receive content', summary: 'Receive intents first', file_indices: [1]},
+      {title: 'Send content', summary: 'Upload and send', file_indices: [0]},
+    ]}};
+  return fixture;
+}
+
+test('Guided reorders one shared diff tree and preserves coordinates, comments, drafts and expansion', () => {
+  for (const layout of ['inline', 'split']) {
+    const {context, state, ui} = guidedPage(layout);
+    const target = {scope: 'line', repository: '/repo', path: 'src/example.js', side: 'old', start_line: 40, end_line: 40};
+    state.threads.push({text: 'Check this', target});
+    state.pendingTarget = target;
+    state.selection = {fileIndex: 0, side: 'old', from: 4, to: 4};
+    ui['composer-text'].value = 'Unsent draft';
+    const expanded = [...state.expanded];
+    ui.diff.scrollTop = 120;
+    context.setReviewView('guided');
+    assert.equal(ui.diff.scrollTop, 0, 'first Guided visit starts at the overview');
+    assert.deepEqual(ui.diff.querySelectorAll('.file').map(block => block.dataset.file), ['1', '0']);
+    assert.deepEqual(Array.from(context.collectChangeStops(), stop => stop.fileIndex), [1, 0, 0]);
+    assert.equal(context.selectionTarget().start_line, 40);
+    assert.equal(context.diffRow(0, 4, 'old').classes.has('threaded'), true);
+    assert.equal(ui.diff.attributes['aria-labelledby'], 'tab-guided');
+    context.setDiffView(layout === 'split' ? 'inline' : 'split');
+    context.jumpToThread(state.threads[0]);
+    assert.equal(context.diffRow(0, 4, 'old').scrolled, true);
+    context.setReviewView('diff');
+    assert.deepEqual(ui.diff.querySelectorAll('.file').map(block => block.dataset.file), ['0', '1']);
+    assert.equal(ui.diff.querySelectorAll('.guide-overview').length, 0);
+    assert.equal(state.pendingTarget, target);
+    assert.equal(ui['composer-text'].value, 'Unsent draft');
+    assert.equal(state.threads[0].target, target);
+    assert.deepEqual([...state.expanded], expanded);
+    assert.equal(ui['tab-diff'].attributes['aria-selected'], 'true');
+  }
+});
+
+test('Guided filtering, collapsed files and truncation retain navigation and complete source access', () => {
+  const {context, state, ui} = guidedPage();
+  state.files.push({...state.files[0], repository: '/other', path: 'src/example.js', binary: true, lines: []});
+  state.expanded.add(2);
+  state.data.guide.chapters.push({title: 'Other changes', summary: 'Review these too', file_indices: [2]});
+  context.setReviewView('guided');
+  assert.deepEqual(ui.diff.querySelectorAll('.file').map(block => block.dataset.file), ['1', '0', '2']);
+  assert.equal(ui.diff.querySelectorAll('.row.meta').some(row => row.textContent.includes('Binary file')), true);
+  state.filter = 'example';
+  state.expanded.clear();
+  context.boot.maxLines = 3;
+  context.renderDiff();
+  assert.deepEqual(Array.from(context.collectChangeStops(), stop => stop.fileIndex), [0, 0, 2]);
+  context.stepChange(1);
+  assert.equal(state.expanded.has(0), true);
+  context.stepChange(1);
+  assert.equal(context.diffRow(0, 5, 'new').dataset.row, '5');
+  const target = {scope: 'line', repository: '/repo', path: 'src/second.js', side: 'new', start_line: 4, end_line: 4};
+  context.jumpToThread({target});
+  assert.equal(state.filter, '');
+  assert.equal(context.diffRow(1, 1, 'new').scrolled, true);
+  state.filter = 'missing';
+  context.renderDiff();
+  assert.equal(ui.diff.querySelectorAll('.file').length, 0);
+  assert.equal(ui['change-position'].textContent, '0 changes');
+});
+
+test('guide text is literal, fallback is honest, and progress changes no comments or decision state', () => {
+  const {context, state, ui} = guidedPage();
+  const hostile = '<img src=x onerror=alert(1)>';
+  state.data.guide.summary = hostile;
+  state.data.guide.chapters[0].summary = hostile;
+  context.setReviewView('guided');
+  assert.ok(ui.diff.textContent.includes(hostile));
+  assert.equal(ui.diff.querySelectorAll('.guide-overview')[0].querySelectorAll('img').length, 0);
+  const progress = ui.diff.querySelector('.guide-progress').children[0];
+  const threads = JSON.stringify(state.threads);
+  progress.checked = true;
+  progress.listeners.change();
+  assert.equal(state.reviewedChapters.has(0), true);
+  assert.equal(state.submitted, undefined);
+  assert.equal(JSON.stringify(state.threads), threads);
+  context.setReviewView('diff');
+  context.setReviewView('guided');
+  assert.equal(ui.diff.querySelector('.guide-progress').children[0].checked, true);
+  state.data.guide.authored = false;
+  state.data.guide.summary = 'No agent-authored guide was supplied.';
+  context.renderDiff();
+  assert.equal(ui.diff.querySelectorAll('.guide-comparison').length, 0);
+  assert.ok(ui.diff.textContent.includes('Directory grouping'));
+});
+
+test('review tabs support keyboard focus and cannot alter document or submitted reviews', () => {
+  const {context, state, ui} = guidedPage();
+  let prevented = 0;
+  context.onReviewTabKey({key: 'ArrowRight', preventDefault() { prevented++; }});
+  assert.equal(state.reviewView, 'guided');
+  assert.equal(ui['tab-guided'].focused, true);
+  assert.equal(ui['tab-guided'].tabIndex, 0);
+  assert.equal(ui['tab-diff'].tabIndex, -1);
+  ui.diff.focused = false;
+  ui.diff.querySelector('.guide-files').children[0].listeners.click();
+  assert.equal(ui.diff.focused, true);
+  context.onReviewTabKey({key: 'Home', preventDefault() { prevented++; }});
+  assert.equal(state.reviewView, 'diff');
+  context.boot.mode = 'document';
+  context.setReviewView('guided');
+  assert.equal(state.reviewView, 'diff');
+  context.boot.mode = 'diff';
+  state.submitted = true;
+  context.setReviewView('guided');
+  assert.equal(state.reviewView, 'diff');
+  assert.equal(prevented, 2);
 });
