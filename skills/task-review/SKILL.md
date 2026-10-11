@@ -1,6 +1,6 @@
 ---
 name: task-review
-description: Runs the blocking review gate in scripts/task_review.py so a human approves the real working-tree change, or a specification or plan, by annotating it in a browser page. Use after focused verification and before committing, and for every specification and plan approval.
+description: Obtain fingerprint-bound human approval of a technical plan or the actual working-tree diff in a browser. Use once before planned implementation and after verification before committing.
 ---
 
 # Task review
@@ -59,10 +59,10 @@ for the captured state.
   renew an approval. Executable evidence follows the shared workflow's freshness
   contract; approval alone is not a reason to rerun it.
 
-## Documents: specifications and plans
+## Technical-plan documents
 
-A specification or a plan is approved through the same gate, on the document
-itself rather than on a summary of it:
+Present the single technical plan through the document gate. Its approval
+authorizes the listed implementation scope directly, not a second planning phase:
 
 ```sh
 scripts/task_review.py review-doc --criterion "<the question this document must answer>" --doc <path>
@@ -87,10 +87,10 @@ approval invalidates it.
   approval once the next phase has used it.
 - `cancelled` — the human withdrew. Stop.
 
-This is the approval step for `shape` and `plan`. Do not also ask a separate
-approve/deny question for the same document. If the page cannot be opened, report the failure and stop. No automatic unbound
-chat fallback is permitted. Continue only through an explicitly authorized supported
-approval mechanism.
+This is the one pre-implementation document approval used by `plan`. Do not add a
+separate specification gate, mandatory walkthrough or competing chat confirmation.
+If the page cannot be opened, report the failure and stop. No automatic unbound
+chat fallback is permitted; a supported replacement requires explicit authorization.
 
 ## Commands
 

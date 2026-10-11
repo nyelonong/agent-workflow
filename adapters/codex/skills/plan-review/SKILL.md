@@ -1,49 +1,16 @@
 ---
 name: plan-review
-description: Run a read-only, task-by-task interactive review of a plan against its specification
+description: Review one visual technical plan against the requested outcome and repository evidence
 ---
-Conduct an interactive, read-only review of the plan path supplied by the user against its approved
-specification. This reviews the plan before implementation. Ask for the path only when it is missing from context. The only permitted local writes are review-progress records and user-approved plan revisions; do not edit production files.
 
-Establish a durable review-progress record in the plan file's review-progress section
-(create it if missing): numbered task groups, status, findings, and revisions. Update
-it after every group.
+Review the supplied technical plan. Resolve its path from context; ask only if it cannot be identified. This is an optional user-requested review, not another mandatory implementation stage.
 
-Use the approved specification and full current plan; reuse them while available and unchanged. Verify the plan covers every
-specification requirement — list any requirement with no owning task before the
-walkthrough starts.
+- Compare outcome, scope and acceptance criteria with the user's decisions and source requirements. No separate specification is required.
+- Check relevant diagrams for real participants, ownership, data/trust boundaries and important failure paths.
+- Check tasks for concrete changes, affected files/components, dependencies and meaningful proof.
+- Surface unresolved material decisions and unsupported safety assumptions. Do not mistake ordinary implementation discretion for missing design.
+- Report findings once in a compact table: location, issue, impact and smallest correction. No coverage matrix, separate ledger or compulsory task-by-task walkthrough.
 
-Run the review interactively:
+Read-only by default; change the plan only with user authorization. Use a plain numbered question for unresolved material decisions and stop until answered. Do not edit production code.
 
-1. Start with an overview: task count, parallel waves, dependency order, total estimated
-   scope, and the specification items each wave serves.
-2. Review exactly one task, or one tightly coupled wave, at a time. For each task
-   provide a review packet:
-   - the goal and the specification requirement or acceptance criterion it serves;
-   - the files, seams, and step-by-step changes it plans, with exact paths;
-   - whether the detail is sufficient for an executor to execute without hidden judgment
-     calls — flag every hidden decision, ambiguous instruction, or missing file path;
-   - its acceptance criteria and evidence commands: are they runnable, and do they
-     actually prove the criterion;
-   - dependency, ordering, parallel-safety, and commit-boundary concerns;
-   - risks, edge cases, migrations, security, or contract changes the task understates;
-   - concrete questions or concerns, with the smallest credible revision;
-   - verdict: **OK**, **question**, or **concern**.
-3. Stop after each group and wait for my response. I may ask questions, request deeper
-   inspection of the current code or spec, mark it reviewed, request a revision, or skip
-   it. Treat `ok` as marking the current group **reviewed**; treat `skip` as
-   **skipped**.
-4. Apply approved revisions to the plan file immediately, in place, and show the revised
-   text before moving on. Record every revision in the progress record.
-5. Keep review and execution as separate phases: do not implement anything, run the
-   plan's commands beyond read-only inspection, or start the next stage until the
-   walkthrough completes and the plan is approved.
-
-After the last group, present the final ledger: total groups; reviewed, skipped, and
-revised counts; each verdict; open questions; and remaining specification gaps. Then run the shared `task-review` `review-doc` gate on the final plan and await its
-validated decision using the native task-review mechanics. Walkthrough `ok` or `skip`
-is not document approval. Only the approved final plan authorizes implementation.
-
-Review against the specification before general quality. Cite concrete plan lines and
-specification items for findings. Keep the response concise; no large final summary
-unless I request one.
+If the user requests approval, present the final document through `task-review` using `review-doc` and follow native waiting/recovery. Do not add another approval when the current plan is already approved and its outcome, scope, authority and material risk are unchanged. Walkthrough acknowledgements are not approval; revisions to a pending document require re-review.

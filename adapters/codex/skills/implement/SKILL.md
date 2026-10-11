@@ -5,7 +5,7 @@ description: Use before changing production code. Settle structure, use test-fir
 
 # Implement
 
-Confirm authorization of the current bounded scope under AGENTS.md. A clear user request to implement that local scope supplies approval; do not ask for it again or require a separate execution-method choice. When a plan applies it must be approved; specification approval alone does not authorize a multi-task implementation. Preserve approval for in-scope corrections; ask only when scope, authority, or a material decision remains unresolved. Implementation approval does not replace exact-state pre-commit review or required authorization for sensitive or external actions.
+Confirm authorization under AGENTS.md and the shared technical-plan contract. A clear routine implementation request may already supply approval; state the short approach and tasks without asking again. Otherwise obtain approval of the one technical plan before editing. Preserve approval for in-scope corrections and ordinary implementation choices. Changed outcome, scope, authority or material risk requires renewed approval. Implementation approval does not replace exact-state pre-commit review or authorization for sensitive or external actions.
 
 Classify material failure outcomes using AGENTS.md. Consequential work stays with the parent. This adapter has no automatic model handoff. Use native isolated writers only when explicitly requested or approved parallel work requires isolation; give each exact file ownership, acceptance criteria, boundaries and required evidence. The parent owns user decisions, actual diff review, fresh checks and commits.
 

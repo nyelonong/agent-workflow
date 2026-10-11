@@ -23,7 +23,7 @@ Read CONTEXT.md before substantive work in a repo that has one. When a term earn
 - Remove a term only after a repository-wide search shows it is obsolete or an approved rename replaces it, and obtain approval for the removal. Keep the file short; a long file means the boundary slipped.
 - Do not create CONTEXT.md speculatively. Create it only when a term has earned an approved line and no file exists.
 
-Do not treat CONTEXT.md as a spec, ADR, or design doc. Design decisions live in `shape`'s specification and decision log.
+Do not treat CONTEXT.md as a design document. Material design decisions belong in the single technical plan.
 
 ## Where the file lives
 

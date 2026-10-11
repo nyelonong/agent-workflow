@@ -31,7 +31,7 @@ Keep exactly one replaceable section with the following heading in the plan. Rep
 - Expected dirty files: every dirty path, including unrelated pre-existing user files, and the reason for each, or `none`; preserve all untouched except for authorized task changes.
 - Child state: every task-owned child and consumed handoff, normally `none`.
 - Review state, when applicable: pending phase, criterion, exact repository/path scope or document, private command-artifact directory and first recovery action. Its private operational record holds the review ID, expected fingerprint, URL, supported command/session handle when available and recorded outcome or `pending`. Missing handles or results remain explicit evidence gaps. Follow [task-review recovery](../../task-review/SKILL.md#recover-an-interrupted-review) before relaunching a review or committing.
-- Learned execution decisions: settled implementation facts that do not change the specification.
+- Learned execution decisions: settled implementation facts within the approved technical plan.
 - Blockers: current blockers, or `none`.
 - Residual risks: accepted P2 notes and other residual risks, or `none`.
 - Ordered resume steps: validation, recovery when needed, checkpoint consumption, and execution.
@@ -44,7 +44,7 @@ Before entering an HTML review wait, record the pending review and its private a
 
 ## Fresh-session bootstrap
 
-1. Read `AGENTS.md`, the approved specification, the plan, and its continuation checkpoint.
+1. Read `AGENTS.md`, the technical plan and its continuation checkpoint. Preserve requirements from older approved source documents when the plan references them.
 2. Before any operation that changes HEAD or the worktree, inspect remotes and validate the repository identity, checkout, branch, HEAD, and exact dirty set against the checkpoint. Confirm there is no inherited writer or other mutation-capable task-owned child.
 3. Only after that validation, fetch from an existing upstream. Update only when safe, without discarding checkpointed work or creating or forcing a conflict, then revalidate the repository identity, checkout, branch, HEAD, exact dirty set, and absence of inherited writers. If no upstream exists, report it once and continue locally.
 4. Validate the last completed task's recorded evidence under the shared freshness contract; rerun missing, stale, invalidated or uncertain proof. For a partial checkpoint, first inspect and review the dirty diff and follow its first recovery action.

@@ -56,9 +56,9 @@ A local commit does not authorize a remote write. Every remote mutation requires
 
 ## Workflow
 
-Act directly for read-only work. Production implementation requires explicit approval of bounded scope; a clear user request to implement that local change supplies it. Discussion, read-only requests, silence, tool permissions, and blanket edit permission are not scope approval. Default to direct parent execution; ask only for unresolved scope, authority, isolation, or cost decisions. Required specification/plan approval, independent review, exact-state pre-commit review, and sensitive/external authorization still apply.
+Act directly for read-only work. Production implementation requires explicit approval of bounded scope; a clear user request to implement that local change supplies it. Discussion, read-only requests, silence, tool permissions, and blanket edit permission are not scope approval. Default to direct parent execution; ask only for unresolved scope, authority, isolation, or cost decisions. Required technical-plan approval, independent review, exact-state pre-commit review, and sensitive/external authorization still apply.
 
-A clear, routine single change needs no specification or plan. Fuzzy/multi-task entry follows the shared workflow. New/materially revised artifacts need approval. Approval authorizes the next phase only: specification approval authorizes planning; a single-change option must explicitly authorize implementation.
+Use one visual technical plan before implementation, not separate specification and execution-plan stages. Scale it to the change: a clear routine request may already settle the scope, leaving only a short approach and task checklist. Preserve that authorization instead of asking again. Otherwise, approval of the technical plan authorizes its bounded implementation. Material changes to outcome, scope, authority, or risk require renewed approval; ordinary implementation decisions and progress updates do not.
 
 The shared `workflow` skill owns entry, artifact ownership, continuous closeout, logical review units, evidence reuse, and legitimate stops. Phase skills apply that contract; they are responsibilities, not a mandatory invocation chain.
 

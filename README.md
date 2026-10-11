@@ -67,18 +67,29 @@ python3 "$HARNESS/scripts/task_review.py" consume --repo "$TARGET"
 
 ```sh
 python3 "$HARNESS/scripts/task_review.py" review-doc \
-  --criterion "This specification settles the requested scope and contracts" \
-  --doc /absolute/path/to/specification.md
-python3 "$HARNESS/scripts/task_review.py" verify-doc \
-  --doc /absolute/path/to/specification.md
-python3 "$HARNESS/scripts/task_review.py" consume-doc \
-  --doc /absolute/path/to/specification.md
+  --criterion "This technical plan settles the outcome, material design and executable tasks" \
+  --doc /absolute/path/to/technical-plan.md
+python3 "$HARNESS/scripts/task_review.py" verify-doc --doc /absolute/path/to/technical-plan.md
+python3 "$HARNESS/scripts/task_review.py" consume-doc --doc /absolute/path/to/technical-plan.md
 ```
 
 - Rendered headings/tables/code and outline; comments retain source line ranges.
 - Keep unchanged through verification and authorized use; consume **after** use.
-- Specification approval → planning; plan approval → bounded implementation.
+- One technical-plan approval → bounded implementation; no separate specification stage.
 - Private planning files belong in ignored `docs/`, not releases.
+
+The workflow uses one visual technical plan: relevant Mermaid architecture,
+sequence, ownership/swimlane or ER diagrams; concise outcome and scope bullets;
+a decisions/risks table; and ordered task checkboxes with concrete proof.
+Omit irrelevant diagrams and sections rather than adding boilerplate. A routine,
+already-authorized change needs only a short approach and tasks, not another
+document or approval. Material changes to outcome, scope, authority or risk
+require renewed approval; ordinary implementation choices and progress do not.
+
+`plan` includes clarification and design. The retired `shape` entry point is
+removed; its useful lenses live under `plan/references/`. Existing approved
+requirements remain valid on resume. Commit review and external-action
+authorization are unchanged.
 
 ### Results and reviewers
 

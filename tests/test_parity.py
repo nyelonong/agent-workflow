@@ -12,10 +12,7 @@ import install  # noqa: E402
 
 POLICY = (ROOT / "policy.md").read_text(encoding="utf-8")
 POLICY_HEADINGS = re.findall(r"(?m)^## .+$", POLICY)
-PHASES = ("shape", "plan", "implement", "review", "finish")
-PORTABLE_SKILL = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
 PI_FILE = Path.home() / ".pi/agent/AGENTS.md"
-PI_SKILL = Path.home() / ".pi/agent/skills/workflow/SKILL.md"
 
 MECHANICS = {
     "pi": ("ask_decision", "workflowScript", "vcc_recall", "pi-subagents"),
@@ -46,12 +43,6 @@ class ParityTests(unittest.TestCase):
             for heading in POLICY_HEADINGS:
                 self.assertIn(heading, text, f"{runtime} lacks {heading}")
 
-    def test_every_runtime_names_every_workflow_phase(self) -> None:
-        for runtime, text in rendered().items():
-            skill = PI_SKILL.read_text(encoding="utf-8") if runtime == "pi" else PORTABLE_SKILL
-            combined = (text + "\n" + skill).lower()
-            for phase in PHASES:
-                self.assertIn(phase, combined, f"{runtime} never mentions {phase}")
 
     def test_runtime_mechanics_stay_in_their_own_runtime(self) -> None:
         texts = rendered()

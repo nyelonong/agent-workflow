@@ -7,23 +7,30 @@ description: Run the adaptive idea-to-finish workflow, or resume approved work. 
 
 Apply the global engineering policy and relevant repository requirements. This is the shared workflow contract; native adapters supply invocation, waiting and recovery mechanics, not alternate policy. Reuse instructions and repository evidence while available and current; load a specialist or tool only for an actual need.
 
-## Entry and design
+## One technical plan
 
-- For a clear, routine single change, use the bounded implementation request as authorization under global policy. Default to direct parent implementation; continue without a specification, plan, or separate execution-choice question. Ask only for unresolved scope, authority, isolation or cost.
-- For fuzzy work or unresolved material decisions, shape a concise specification. Consequence alone does not require a new specification when scope and decisions are settled.
-- Plan only multiple logical tasks. Consult at most one read-only architect when useful, not as a prerequisite. Reconcile its advice against the approved specification and repository.
-- Read-only investigation, shaping, review and verification need no implementation approval. Preserve existing authorization on resume unless scope, authority, isolation or cost materially changes.
+- Inspect the relevant repository and clarify only material unknowns. Establish the intended outcome, activation behavior and data-disclosure boundary separately; do not substitute a trial for a requested replacement.
+- Use `plan` for clarification, design and task breakdown together. Do not create a separate specification, design-coverage matrix or second execution plan.
+- For a clear routine change already authorized by the user, state a short approach and task checklist before editing. Do not require a document, diagram or repeat approval merely to follow a process.
+- Otherwise, keep one local, uncommitted technical plan at `<repository-root>/docs/plans/YYYY-MM-DD-<topic>.md`. Without a repository, use the current working directory. The plan and repository must provide enough evidence to execute without inventing material decisions.
+- Read-only investigation, planning, review and verification need no implementation approval. An optional read-only architect may advise on an uncertain design; it is not a prerequisite or a separate phase.
 
-A specification archives approved decisions; a plan derives their execution and adds none.
-
-| Artifact | Decision-relevant coverage |
+| Plan content | Format and purpose |
 | --- | --- |
-| Specification | Goal, non-goals, constraints, decision log, acceptance outcomes and proof; affected roles when defined. Architecture/boundaries, ownership/lifecycle/invariants and affected contracts: producers/consumers, transport, schema/field meanings, validation, authorization, errors, compatibility and sensitive-data handling. Diagram material structure, flow or data and failure paths. Database work includes conceptual entities, relationship cardinality, ownership, keys/constraints, query-backed indexes, retention and compatibility. Record actual section references or justified not-applicable areas in a compact design-coverage table. |
-| Plan | Reference specification sections and acceptance criteria rather than restating them. Record baseline, existing dirty-path ownership, dependencies, exact paths/source seams, ordered changes, authority, evidence commands/results, risks and recovery. Classify consequence and independent-review necessity separately. Maintain task/review progress and one authoritative `next:`. |
+| Outcome and scope | Short bullets: intended result, boundaries and observable acceptance criteria. |
+| Technical design | Relevant Mermaid diagrams: architecture for components and boundaries; sequence for ordered interactions and failure paths; swimlanes for ownership and handoffs; ERD for changed entities, keys and relationship cardinality. Select only diagrams that explain distinct material decisions. |
+| Decisions and risks | A compact table of chosen approaches, material trade-offs, assumptions and blockers. Include affected contracts, permissions, sensitive-data handling, lifecycle or migration/recovery constraints where they change. |
+| Implementation tasks | Ordered checkboxes naming the concrete change, affected files/components, dependency when needed, and proof of completion. Give the actual check and what it proves; link to existing requirements rather than copying them. |
 
-Scale both artifacts to decisions, not the longest template. Settle material unknowns before approval; a read-before-edit list cannot hide a design decision. A task must be executable from the plan, specification and repository.
+Make the overview scannable; use tables and points instead of paragraphs. Keep diagrams readable, label participants and arrows, and show important failure paths. Do not repeat the same flow in multiple diagrams and prose. Omit irrelevant sections rather than filling them with “not applicable.” A small change may need only bullets and tasks; complexity, not a fixed template, determines detail.
 
-Use the shared `task-review` client `scripts/task_review.py review-doc` for new or materially revised specifications/plans. Apply annotations and re-review changed documents; walkthrough acknowledgements are not approval. Specification approval authorizes planning only; a single-change entry must explicitly authorize implementation. Plan approval authorizes its implementation. No separate chat approval competes with the document gate.
+Resolve material unknowns before implementation approval. Neither an attractive diagram nor a read-before-edit task substitutes for a decision about scope, authority, contracts or safety. Database changes still require the schema/migration rules below and repository-specific evidence.
+
+For a technical-plan document, use `task-review` via `scripts/task_review.py review-doc` once before implementation; apply annotations and re-review material revisions. Approval authorizes the listed implementation scope directly. Do not add a specification approval, compulsory task-by-task walkthrough or duplicate chat confirmation. Walkthrough acknowledgements are not approval. A failed or cancelled gate blocks; the existing approval and recovery rules apply.
+
+Maintain task status, actual evidence/results and one `next:` action in the same plan, without rewriting settled design. Recover repository/baseline, dirty-path ownership and pending review state when resuming; record only the operational detail needed for safe continuation. Progress updates and ordinary implementation choices do not reopen approval. Changed outcome, scope, authority or material risk does. Keep a document unchanged while its fingerprint-bound approval is pending or being used.
+
+Existing approved work keeps its scope, constraints and authority on resume. Use an older specification as source evidence when present; do not demand a rewrite or silently discard its requirements. Add no new specification stage.
 
 ## Implementation responsibilities
 
@@ -51,7 +58,7 @@ A failed gate blocks; never automatically fall back to unbound chat approval. A 
 
 ## Integrated finish and continuity
 
-After the last plan task, assess the integrated result against specification and plan. Per-task checks do not alone prove interactions. Establish the repository's full gate against that result; reuse an already applicable full-gate result, or refresh it when invalidated or repository rules require it. Required independent review may be this integrated pass when no earlier delivery/safety boundary requires it; do not add a duplicate finish reviewer.
+After the last task, assess the integrated result against the approved outcome and technical plan. Per-task checks do not alone prove interactions. Establish the repository's full gate against that result; reuse an already applicable full-gate result, or refresh it when invalidated or repository rules require it. Required independent review may be this integrated pass when no earlier delivery/safety boundary requires it; do not add a duplicate finish reviewer.
 
 Resolve blockers through the same closeout. Report gate results, skips, evidence limits and residual risks. The final merge, pull-request, keep or discard decision stays with the user; a passing gate authorizes none of them.
 

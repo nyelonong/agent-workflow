@@ -55,8 +55,8 @@ alternative. If no concrete cost can be shown, do not invent a finding.
 6. Count commits in that range and inspect every subject. More than 20 commits is a P1 finding
    unless repository policy or an explicit approved exception justifies it. Temporary, `fixup!`,
    `squash!`, `WIP`, or meaningless subjects such as `update` or `fix stuff` are P1 at any count.
-7. Read the applicable ticket, approved specification, plan, repository instructions, and changed
-   code paths. Do not invent acceptance criteria when no source exists.
+7. Read the applicable ticket, technical plan, referenced requirements, repository instructions,
+   and changed code paths. Do not invent acceptance criteria when no source exists.
 
 ## 2. Review the integrated change
 

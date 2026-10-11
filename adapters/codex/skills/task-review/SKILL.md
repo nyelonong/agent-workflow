@@ -1,6 +1,6 @@
 ---
 name: task-review
-description: "Run the blocking pre-commit human review gate over the real working tree. Use after the unit's focused checks pass and before committing any production change, or whenever the user asks for the review gate."
+description: "Run fingerprint-bound human review of a visual technical plan before planned implementation, or the real working-tree diff after verification and before committing."
 ---
 
 # Task review
@@ -38,7 +38,7 @@ A failed reviewer, malformed result, timeout, or repository state that changed u
 
 Run `verify` immediately before staging. Any change to the reviewed paths since approval fails it, and that failure must be re-reviewed rather than waived. Run `consume` after the commit lands so the approval cannot cover a second commit. A correction after approval invalidates it; passing tests do not renew it.
 
-For document approval, use `verify-doc --doc PATH` with the recorded criterion before beginning the authorized next phase, and `consume-doc` once that phase has used the approval. Apply requested document corrections and run `review-doc` again. Keep reviewed files, including embedded checkpoints, unchanged from launch through verification and approval use/consumption; for a diff, this includes the commit and `consume`. Record interim recovery state externally instead of marking a reviewed checkpoint consumed. Specification approval authorizes planning only unless the approved single-change entry explicitly authorizes implementation.
+For document approval, use `verify-doc --doc PATH` with the recorded criterion before beginning the authorized next phase, and `consume-doc` once that phase has used the approval. Apply requested document corrections and run `review-doc` again. Keep reviewed files, including embedded checkpoints, unchanged from launch through verification and approval use/consumption; for a diff, this includes the commit and `consume`. Record interim recovery state externally instead of marking a reviewed checkpoint consumed. A technical-plan approval authorizes its bounded implementation directly; do not insert a separate specification gate.
 
 ## Recover an interrupted review
 

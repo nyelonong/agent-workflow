@@ -428,7 +428,7 @@ def codex_agent_files(home: Path) -> list[tuple[Path, Path]]:
 
 def codex_links(home: Path) -> list[tuple[Path, Path]]:
     names = (
-        "shape", "plan", "implement", "investigate", "review", "verify", "finish",
+        "plan", "implement", "investigate", "review", "verify", "finish",
         "no-comments", "domain-language", "plan-review", "interactive-review", "prepush",
         "resume-plan", "project", "feature-journey", "research", "repo-fit", "retry", "task-boundary",
         "task-review",
@@ -508,6 +508,9 @@ def install_codex(home: Path) -> None:
         install_managed_file(source, target)
     for source, target in codex_links(home):
         install_codex_skill(source, target)
+    retired = home / ".codex/skills/shape"
+    if retired.is_symlink() and Path(os.readlink(retired)) == ROOT / "adapters/codex/skills/shape":
+        retired.unlink()
 
 
 def check_codex(home: Path) -> None:
@@ -525,6 +528,9 @@ def check_codex(home: Path) -> None:
         if not (source / "SKILL.md").is_file():
             fail(f"skill source is missing: {source / 'SKILL.md'}")
         check_link(source, target)
+    retired = home / ".codex/skills/shape"
+    if retired.is_symlink() and Path(os.readlink(retired)) == ROOT / "adapters/codex/skills/shape":
+        fail(f"retired managed skill remains: {retired}; run install codex")
 
 
 def pi_source(home: Path) -> Path:

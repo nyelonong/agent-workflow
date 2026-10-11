@@ -1,6 +1,6 @@
 # Interface flow lens
 
-Use this lens when the specification includes a user-facing flow.
+Use this lens when the technical plan changes a user-facing flow.
 
 Walk the flow through:
 
@@ -16,4 +16,4 @@ Walk the flow through:
 
 Choose validation timing and control affordances from the user's job, risk, and recoverability; do not assume every invalid action needs a disabled control or one universal validation point. Represent meaningful content states semantically, not only as visual styles.
 
-Put user-visible flow, states, and permissions in the specification. Put components, routes, and test work in the plan. Implementation details belong in the specification only when changing them would change an approved outcome or constraint.
+Show user-visible flow, states, permissions and ownership in the technical plan's relevant diagram. Put components, routes and proof in the task checklist; do not repeat the same flow in a second document.

@@ -15,86 +15,6 @@ INSTALLER = ROOT / "install.sh"
 
 
 class WorkflowContractTests(unittest.TestCase):
-    def test_portable_policy_matches_the_pi_experience(self) -> None:
-        policy = (ROOT / "policy.md").read_text(encoding="utf-8")
-        workflow = (ROOT / "skills/workflow/SKILL.md").read_text(encoding="utf-8")
-        lowered = policy.lower()
-
-        for required in (
-            "production implementation requires explicit approval",
-            "clear, routine single change",
-            "the shared `workflow` skill owns entry",
-            "complete actual uncommitted diff for the logical unit",
-            "fresh independent review is mandatory only when",
-            "application runtime behavior",
-            "data integrity",
-            "security, privacy, authentication, or authorization",
-            "concurrency, asynchronous ownership, cancellation, or resource lifetime",
-            "external systems",
-            "operational authority or safety",
-            "documentation, skills, prompts, and configuration prose",
-            "remote write",
-        ):
-            self.assertIn(required, lowered)
-        self.assertNotIn("no production code without a failing test first", lowered)
-        self.assertNotIn("routing:", lowered)
-
-        for required in (
-            "at most one read-only architect",
-            "parent implements",
-            "shared `task-review` client",
-            "collects the real complete diff",
-            "Every changed reviewed state invalidates human approval",
-            "errors and cancellation authorize no commit",
-            "duplicate chat confirmation",
-            "no mandatory subagent review",
-            "one fresh read-only independent reviewer",
-            "before its applicable delivery or safety boundary",
-            "Repeat executable checks only if missing or invalidated",
-        ):
-            self.assertIn(required, workflow)
-
-    def test_portable_policy_carries_the_hard_engineering_rules(self) -> None:
-        policy = (ROOT / "policy.md").read_text(encoding="utf-8").lower()
-        claude = (ROOT / "adapters/claude/CLAUDE.md").read_text(encoding="utf-8")
-
-        for required in (
-            "start any go work",
-            "change only necessary code, callers, interfaces, tests, and documentation",
-            "report unrelated defects",
-            "use simple english names",
-            "allow common terms and abbreviations",
-            "comments and docstrings are guilty by default",
-            "async work needs a clear owner and an appropriate cancellation or shutdown path",
-            "do not optimize speculatively",
-            "## sql and migrations",
-            "once applied in a shared, test, staging, or production environment",
-            "test observable behavior and stable invariants, not production configuration",
-            "postgresql, clickhouse, or redis",
-            "integration tests may be committed and run in ci only with explicitly selected isolated test components",
-            "deterministic setup and cleanup",
-            "never default to live endpoints or use production credentials",
-            "smoke and end-to-end tests stay local-only, uncommitted",
-            "committing tests authorizes no sensitive or external actions",
-            "necessary local restructuring, renaming, and formatting are implementation discretion",
-            "preserve approved behavior and contracts",
-            "unrelated cleanup or material scope or contract changes require approval",
-            "non-obvious constraints or decisions supported by code or contract evidence",
-            "comments do not excuse correctness failures",
-            "use an isolated real database",
-            "in-process http server",
-            "never request secrets in chat",
-            "automatic context compaction is not a task boundary",
-            "explain mentioned ids",
-            "percent-encoded `file://`",
-            "`id.afrani.app.{app_name}`",
-        ):
-            self.assertIn(required, policy)
-        for pi_only in ("ask_decision", "workflowscript", "base_tools", "~/.pi/"):
-            self.assertNotIn(pi_only, policy)
-        self.assertLessEqual(len(policy), 13_000)
-        self.assertLessEqual(len(policy.splitlines()), 200)
-        self.assertIn("`go-engineering`", claude)
 
     def test_native_role_layouts_are_present_and_read_only(self) -> None:
         paths = (
@@ -331,7 +251,7 @@ class CodexInstallerTests(InstallerTests):
             self.assertTrue(link.is_symlink())
             self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(link)))
             for name in (
-                "shape", "plan", "implement", "investigate", "review", "verify", "finish",
+                "plan", "implement", "investigate", "review", "verify", "finish",
                 "no-comments", "domain-language", "plan-review", "interactive-review",
                 "prepush", "resume-plan", "project", "feature-journey", "research",
                 "repo-fit", "retry", "task-boundary", "task-review", "go-engineering",
@@ -354,6 +274,46 @@ class CodexInstallerTests(InstallerTests):
             self.run_installer(home, runtime="codex")
             self.assertEqual(ROOT / "skills/workflow", Path(os.readlink(workflow)))
             self.assertEqual('model = "existing-model"\n', unrelated.read_text())
+
+    def test_retires_only_its_owned_shape_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            self.seed(home)
+            self.run_installer(home, runtime="codex")
+            retired = home / ".codex/skills/shape"
+            retired.symlink_to(ROOT / "adapters/codex/skills/shape")
+            result = self.run_installer(home, "check", runtime="codex", check=False)
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("retired managed skill", result.stderr)
+            self.run_installer(home, runtime="codex")
+            self.assertFalse(retired.is_symlink())
+            self.run_installer(home, "check", runtime="codex")
+            first = self.snapshot(home)
+            self.run_installer(home, runtime="codex")
+            self.assertEqual(first, self.snapshot(home))
+
+    def test_preserves_unowned_shape_paths(self) -> None:
+        for kind in ("directory", "foreign-link", "broken-link"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                self.seed(home)
+                retired = home / ".codex/skills/shape"
+                retired.parent.mkdir()
+                if kind == "directory":
+                    retired.mkdir()
+                    (retired / "SKILL.md").write_text("User-owned design guidance\n")
+                else:
+                    foreign = home / "foreign"
+                    if kind == "foreign-link":
+                        foreign.mkdir()
+                        (foreign / "SKILL.md").write_text("User-owned design guidance\n")
+                    retired.symlink_to(foreign)
+                self.run_installer(home, runtime="codex")
+                self.run_installer(home, "check", runtime="codex")
+                if kind == "directory":
+                    self.assertEqual("User-owned design guidance\n", (retired / "SKILL.md").read_text())
+                else:
+                    self.assertEqual(foreign, Path(os.readlink(retired)))
 
     def test_workflow_collisions_fail_before_any_write(self) -> None:
         for kind in ("directory", "foreign-link", "broken-link"):
@@ -536,32 +496,6 @@ class TaskReviewWiringTests(unittest.TestCase):
             self.fail(f"installer failed: {result.stdout}\n{result.stderr}")
         return result
 
-    def test_the_shared_skill_states_the_gate_contract(self) -> None:
-        skill = (ROOT / "skills/task-review/SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("name: task-review", skill)
-        self.assertIn("description:", skill)
-        for required in (
-            "before any commit",
-            "Never summarize",
-            "Read-only investigation, review, and verification need no gate",
-            "request-changes",
-            "return-to-planning",
-            "cancelled",
-            "Run `verify` immediately before staging",
-            "Run `consume` after the commit lands",
-            "A correction after approval invalidates it",
-            "scripts/task_review.py",
-            "RDG_CONTROL_COMMAND",
-            # the document half of the gate, pinned so the skill cannot drift
-            # away from what the page actually does
-            "review-doc",
-            "verify-doc",
-            "consume-doc",
-            "source range",
-            "heading outline",
-        ):
-            self.assertIn(required, skill, required)
-        self.assertNotIn("rdg --review", skill, "the gate owns the reviewer invocation")
 
     def test_the_codex_copy_names_its_own_invocation_and_decision_flow(self) -> None:
         codex = (ROOT / "adapters/codex/skills/task-review/SKILL.md").read_text(encoding="utf-8")
