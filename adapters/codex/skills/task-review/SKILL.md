@@ -15,12 +15,13 @@ The client is `scripts/task_review.py` in the repository that owns this skill; r
 
 Always delegate preparation and invocation of both `review` and `review-doc`
 to one bounded native subagent, following the [shared model-selection and authority
-policy](../../../../skills/task-review/SKILL.md#delegation). Select the cheapest
-latest-stable eligible model from the current provider's available runtime scope
-using catalog evidence, not a fixed ID or inherited parent default. Keep the
-parent's model unchanged. Use native child model controls; if delegation, model
-selection or supported waiting is unavailable, report the blocker and ask the
-user rather than running the gate in the parent or switching providers.
+policy](../../../../skills/task-review/SKILL.md#delegation). Always use GPT-6 Luna
+(`gpt-6-luna`) within the current provider's available runtime scope. Do not compare
+prices, inherit the parent's model or substitute another model/version; if Luna
+is unavailable or disallowed, stop and ask the user. Keep the parent's model
+unchanged. Use native child model controls; if delegation, model selection or
+supported waiting is unavailable, report the blocker and ask the user rather
+than running the gate in the parent or switching providers.
 
 Give the child the approved criterion, exact scope/document, owning client,
 verification evidence and private recovery directory. It may inspect code,

@@ -29,25 +29,22 @@ requirement, not a runtime guard. A parent-owned background command with no
 subagent is not delegation. The delegated gate runner executes the client
 directly and must not delegate again.
 
-Before each new gate, the parent selects the model:
+Use **GPT-6 Luna (`gpt-6-luna`)** for every plan and diff gate runner unless the
+runtime adapter explicitly names a different fixed task-review model. Use that
+adapter's fixed model when specified; do not choose dynamically.
 
-- Inspect the runtime's executable agents and live available model catalog.
-- Restrict candidates to available tool-capable chat models in the parent's
-  **current provider**, active runtime model scope and applicable child model
-  restrictions. Treat an unrestricted scope as all available models; do not
-  infer the active scope solely from settings on disk.
-- Keep the latest stable available member of each documented model family,
-  then choose the lowest catalog input-plus-output token rate. This equal-token
-  comparison is a selection proxy, not a total-cost or subscription-quota claim.
-  Use current registry/catalog evidence for prices and family versions; model
-  names alone do not establish pricing or recency across families. Unknown
-  pricing is not free. Break price ties by documented recency.
-- Pass the selected exact native model identifier explicitly, with low supported
-  thinking, fresh context and no priority/fast mode. Inspect configured fallbacks too;
-  none may escape the provider, scope or selected cost/recency policy. Do not
-  pin model IDs in this skill, inherit the parent's expensive default, silently
-  upgrade, or switch providers. Missing evidence, no eligible model or a launch
-  failure blocks the gate; ask the user rather than bypassing delegation.
+- Inspect the runtime's executable agents and confirm that the fixed model is
+  available and tool-capable in the parent's **current provider**, active runtime
+  model scope and applicable child model restrictions. Reuse current evidence;
+  do not compare prices or select a newer model. Do not infer the active scope
+  solely from settings on disk.
+- Pass the exact native identifier for the fixed model explicitly, with low
+  supported thinking, fresh context and no priority/fast mode. Do not inherit
+  the parent's model, substitute another version or model, or switch providers.
+- Disable alternate-model fallbacks or confirm that every configured fallback
+  resolves to the same fixed model within those limits. If availability,
+  eligibility or fallback behavior cannot be confirmed, or launch fails, stop
+  and ask the user rather than choosing another model or bypassing delegation.
 
 Use an executable role with client-command and private-artifact permissions,
 not the independent code reviewer. Use native delegation and supported waiting;
@@ -71,10 +68,13 @@ canonical artifacts and applies annotations or stop decisions; it still owns
 does not replace any required independent code review or human decision.
 
 In Pi, inspect `subagent({ action: "list", capabilities: true })` and
-`subagent({ action: "models" })`, copy an exact `provider/id`, and launch with
-fresh context and `async: true` through `subagent` or `runs.run` in one async
-workflow. A childless `runs.host` gate is not delegation. Other adapters own
-their native launch, model-selection and waiting mechanics.
+`subagent({ action: "models" })`. With the `openai-codex` provider, pass
+`model: "openai-codex/gpt-6-luna:low"` explicitly. For another current provider,
+use only its available exact identifier for the same GPT-6 Luna model; if none
+exists, stop. Launch with fresh context and `async: true` through `subagent`
+or `runs.run` in one async workflow. A childless `runs.host` gate is not
+delegation. Other adapters own their native launch, model-selection and waiting
+mechanics.
 
 ## Guided diff view
 
