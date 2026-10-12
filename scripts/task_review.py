@@ -24,6 +24,8 @@ stderr so a caller can parse the result without filtering noise.
 from __future__ import annotations
 
 import argparse
+import codecs
+import contextlib
 import datetime
 import hashlib
 import json
@@ -31,9 +33,12 @@ import os
 import posixpath
 import re
 import shlex
+import signal
 import stat
 import subprocess
 import sys
+import tempfile
+import threading
 import uuid
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -144,31 +149,94 @@ def resolve_reviewer(environ: "os._Environ[str] | dict[str, str]") -> str:
     return DEFAULT_REVIEWER
 
 
-def run_reviewer(launcher: str, flag: str, request_json: str, timeout: "int | None", timed_out: str) -> bytes:
-    """Runs ``<launcher> <flag> <request-json>`` and returns raw stdout.
-
-    The reviewer blocks until a human decides, so the default timeout is
-    generous and ``None`` means wait forever. Its stderr is forwarded to this
-    client's stderr for diagnostics; only stdout is validated.
-    """
+def run_reviewer(
+    launcher: str, flag: str, request_json: str, timeout: "int | None", timed_out: str,
+    *, recovery: "ReviewRecovery | None" = None,
+) -> bytes:
     command = [*resolve_launcher_command(launcher), flag, request_json]
-    try:
-        completed = subprocess.run(
-            command,
-            capture_output=True,
-            stdin=subprocess.DEVNULL,
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        raise LauncherError(timed_out) from None
-    except OSError as error:
-        raise LauncherError(f"unable to run the reviewer: {error}") from None
-    stderr = completed.stderr.decode("utf-8", "replace")
-    if stderr:
-        sys.stderr.write(stderr)
-    if completed.returncode != 0:
-        raise LauncherError(stderr.strip() or f"the reviewer exited with code {completed.returncode}")
-    return completed.stdout
+    environment = None
+    if recovery is not None:
+        environment = {**os.environ, "HTML_REVIEW_URL_FILE": str(recovery.directory / "browser-url.txt")}
+    with tempfile.TemporaryFile() as output:
+        process = None
+        interrupted = False
+        diagnostics: list[bytes] = []
+        relay_errors: list[Exception] = []
+
+        def interrupt(signum: int, frame: Any) -> None:
+            nonlocal interrupted
+            if interrupted:
+                return
+            interrupted = True
+            # Defer interruption until Popen returns an owned process handle.
+            if process is not None:
+                raise KeyboardInterrupt
+
+        def stop() -> None:
+            if process is None:
+                return
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
+                process.kill()
+
+        def relay() -> None:
+            decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            try:
+                while chunk := process.stderr.read1(65536):
+                    diagnostics.append(chunk)
+                    sys.stderr.write(decoder.decode(chunk))
+                    sys.stderr.flush()
+                sys.stderr.write(decoder.decode(b"", final=True))
+                sys.stderr.flush()
+            except Exception as error:
+                relay_errors.append(error)
+                stop()
+
+        reader = threading.Thread(target=relay, name="task-review-stderr")
+        previous_handlers: dict[int, Any] = {}
+        try:
+            if threading.current_thread() is threading.main_thread():
+                for signum in (signal.SIGTERM, signal.SIGINT):
+                    previous_handlers[signum] = signal.getsignal(signum)
+                    signal.signal(signum, interrupt)
+            try:
+                process = subprocess.Popen(
+                    command, stdout=output, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                    env=environment, start_new_session=os.name == "posix",
+                )
+            except OSError as error:
+                raise LauncherError(f"unable to run the reviewer: {error}") from None
+            if interrupted:
+                raise KeyboardInterrupt
+            if recovery is not None:
+                recovery.reviewer_started(process.pid, command)
+            reader.start()
+            process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            raise LauncherError(timed_out) from None
+        except KeyboardInterrupt:
+            raise LauncherError("the review was interrupted; no approval was returned") from None
+        finally:
+            interrupted = True
+            if process is not None:
+                stop()
+                process.wait()
+                if reader.ident is not None:
+                    reader.join()
+                process.stderr.close()
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
+        if relay_errors:
+            raise LauncherError(f"unable to forward reviewer diagnostics: {relay_errors[0]}")
+        if process.returncode != 0:
+            stderr = b"".join(diagnostics).decode("utf-8", "replace")
+            raise LauncherError(stderr.strip() or f"the reviewer exited with code {process.returncode}")
+        output.seek(0)
+        return output.read()
 
 
 def launch_review(launcher: str, request_json: str, timeout: "int | None") -> bytes:
@@ -1082,6 +1150,99 @@ def ledger_paths(repositories: Sequence[Repository], git: GitRunner) -> list[str
     return paths
 
 
+class ReviewRecovery:
+    def __init__(self, directory: str, request: "ReviewRequest | DocumentRequest"):
+        self.directory = Path(directory).resolve()
+        roots = [repository.root for repository in request.repositories] if isinstance(request, ReviewRequest) else [str(Path(request.path).parent)]
+        if any(self.directory.is_relative_to(root) for root in roots):
+            raise UsageError("the recovery directory must be outside the reviewed inputs")
+        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if stat.S_IMODE(self.directory.stat().st_mode) & 0o077:
+            raise UsageError("the recovery directory must be private (mode 0700)")
+        if any(self.directory.iterdir()):
+            raise UsageError("the recovery directory is not empty; recover the existing run before relaunching")
+        self.request = request
+        self.process = {
+            "client_pid": os.getpid(), "parent_pid": os.getppid(),
+            "review_id": request.review_id, "started_at": utc_timestamp(),
+        }
+        self.write_json("process.json", self.process, exclusive=True)
+        self.write_json("request.json", request.payload())
+        self.state("starting")
+
+    def write_json(self, name: str, payload: dict[str, Any], *, exclusive: bool = False) -> None:
+        destination = self.directory / name
+        temporary = destination if exclusive else self.directory / f".{name}.{uuid.uuid4().hex}"
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(payload, stream, sort_keys=True)
+                stream.write("\n")
+            if not exclusive:
+                os.replace(temporary, destination)
+        finally:
+            if not exclusive:
+                temporary.unlink(missing_ok=True)
+
+    def state(self, state: str, **fields: Any) -> None:
+        self.write_json("state.json", {
+            "review_id": self.request.review_id, "state": state,
+            "updated_at": utc_timestamp(), **fields,
+        })
+
+    def reviewer_started(self, pid: int, command: list[str]) -> None:
+        self.process.update(reviewer_pid=pid, reviewer_argv=command)
+        self.write_json("process.json", self.process)
+
+    def wrap_launch(self, launch: Launcher, flag: str) -> Launcher:
+        if launch not in (launch_review, launch_document):
+            return launch
+
+        def invoke(launcher: str, request_json: str, timeout: "int | None") -> bytes:
+            message = "the document review timed out before a human decided" if flag == "--review-doc" else "the review timed out before a human decided"
+            return run_reviewer(launcher, flag, request_json, timeout, message, recovery=self)
+
+        return invoke
+
+    def finish(self, result: dict[str, Any], exit_code: int) -> None:
+        self.write_json("result.json", result)
+        self.state("finished", decision=result["decision"], exit_code=exit_code)
+
+    def __enter__(self) -> "ReviewRecovery":
+        descriptor = os.open(self.directory / "stderr.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        self.log = os.fdopen(descriptor, "w", encoding="utf-8")
+        self.stderr = sys.stderr
+        self.redirect = contextlib.redirect_stderr(self)
+        self.redirect.__enter__()
+        return self
+
+    def write(self, text: str) -> int:
+        self.log.write(text)
+        return self.stderr.write(text)
+
+    def flush(self) -> None:
+        self.log.flush()
+        self.stderr.flush()
+
+    def __exit__(self, kind: Any, error: Any, traceback: Any) -> None:
+        try:
+            if error is not None:
+                self.write(f"task_review: {error or 'review interrupted'}\n")
+                self.state("error", exit_code=EXIT_ERROR, error=str(error) or "review interrupted")
+        finally:
+            self.redirect.__exit__(kind, error, traceback)
+            self.log.close()
+
+
+def review_snapshot(request: ReviewRequest, launcher: str, git: GitRunner) -> Snapshot:
+    snapshot = collect_snapshot(request.repositories, git)
+    if request.guide is not None:
+        if launcher != HTML_REVIEWER:
+            raise UsageError("guided reviews require TASK_REVIEW_REVIEWER=html")
+        validate_guide_snapshot(request.guide, snapshot)
+    return snapshot
+
+
 def command_review(
     request: ReviewRequest,
     *,
@@ -1089,6 +1250,7 @@ def command_review(
     launch: Launcher,
     launcher: str,
     timeout: "int | None",
+    recovery: "ReviewRecovery | None" = None,
 ) -> int:
     paths = ledger_paths(request.repositories, git)
     # Revoke any prior approval first: nothing counts as approved from here on
@@ -1105,11 +1267,9 @@ def command_review(
         ),
     )
     try:
-        snapshot = collect_snapshot(request.repositories, git)
-        if request.guide is not None:
-            if launcher != HTML_REVIEWER:
-                raise UsageError("guided reviews require TASK_REVIEW_REVIEWER=html")
-            validate_guide_snapshot(request.guide, snapshot)
+        snapshot = review_snapshot(request, launcher, git)
+        if recovery is not None:
+            recovery.state("reviewing", fingerprint=snapshot.fingerprint)
         stdout = launch(launcher, request.to_json(), timeout)
         result = parse_review_result(stdout, request.review_id)
         validate_decision_semantics(result)
@@ -1120,25 +1280,28 @@ def command_review(
                     "the reviewed repository state changed while the human was deciding; "
                     "run the review again for the current state"
                 )
-    except TaskReviewError as error:
+        append_ledger(
+            paths,
+            make_entry(
+                DECISION_STATES[result["decision"]],
+                result["decision"],
+                snapshot.fingerprint,
+                request.criterion,
+                request.repositories,
+                annotations=result["annotations"],
+            ),
+        )
+        code = EXIT_OK if result["decision"] == APPROVING_DECISION else EXIT_NOT_APPROVED
+        if recovery is not None:
+            recovery.finish(result, code)
+        emit(result)
+        return code
+    except (TaskReviewError, OSError, KeyboardInterrupt) as error:
         append_ledger(
             paths,
             make_entry("error", "error", "", request.criterion, request.repositories, error=str(error)),
         )
         raise
-    append_ledger(
-        paths,
-        make_entry(
-            DECISION_STATES[result["decision"]],
-            result["decision"],
-            snapshot.fingerprint,
-            request.criterion,
-            request.repositories,
-            annotations=result["annotations"],
-        ),
-    )
-    emit(result)
-    return EXIT_OK if result["decision"] == APPROVING_DECISION else EXIT_NOT_APPROVED
 
 
 def command_verify(repositories: Sequence[Repository], *, git: GitRunner) -> int:
@@ -1242,6 +1405,7 @@ def command_review_doc(
     launch: Launcher,
     launcher: str,
     timeout: "int | None",
+    recovery: "ReviewRecovery | None" = None,
 ) -> int:
     """Reviews a specification or a plan with the same fail-closed guarantees as
     a diff review: the approval binds to the exact bytes that were read, and
@@ -1260,7 +1424,9 @@ def command_review_doc(
     )
     try:
         before = document_fingerprint(request.path, request.criterion)
-        stdout = launch_document(launcher, request.to_json(), timeout)
+        if recovery is not None:
+            recovery.state("reviewing", fingerprint=before)
+        stdout = launch(launcher, request.to_json(), timeout)
         result = parse_review_result(
             stdout,
             request.review_id,
@@ -1275,25 +1441,28 @@ def command_review_doc(
                 "the document changed while the human was deciding; "
                 "run the review again for the current text"
             )
-    except TaskReviewError as error:
+        append_ledger(
+            [ledger],
+            make_document_entry(
+                DECISION_STATES[result["decision"]],
+                result["decision"],
+                before,
+                request.criterion,
+                request.path,
+                annotations=result["annotations"],
+            ),
+        )
+        code = EXIT_OK if result["decision"] == APPROVING_DECISION else EXIT_NOT_APPROVED
+        if recovery is not None:
+            recovery.finish(result, code)
+        emit(result)
+        return code
+    except (TaskReviewError, OSError, KeyboardInterrupt) as error:
         append_ledger(
             [ledger],
             make_document_entry("error", "error", "", request.criterion, request.path, error=str(error)),
         )
         raise
-    append_ledger(
-        [ledger],
-        make_document_entry(
-            DECISION_STATES[result["decision"]],
-            result["decision"],
-            before,
-            request.criterion,
-            request.path,
-            annotations=result["annotations"],
-        ),
-    )
-    emit(result)
-    return EXIT_OK if result["decision"] == APPROVING_DECISION else EXIT_NOT_APPROVED
 
 
 def command_verify_doc(request: DocumentRequest, *, git: GitRunner) -> int:
@@ -1379,10 +1548,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     commands = parser.add_subparsers(dest="command", required=True)
 
-    review = commands.add_parser("review", help="open a review and wait for a human decision")
-    review.add_argument("--criterion", required=False, metavar="TEXT")
-    review.add_argument("--guide", metavar="PATH", help="local authored guide JSON for the HTML Guided tab")
-    add_repository_arguments(review, paths=True, required=False)
+    for name, help_text in (
+        ("review", "open a review and wait for a human decision"),
+        ("preflight", "validate scope and guide without opening a review or changing approval"),
+    ):
+        review = commands.add_parser(name, help=help_text)
+        review.add_argument("--criterion", required=False, metavar="TEXT")
+        review.add_argument("--guide", metavar="PATH", help="local authored guide JSON for the HTML Guided tab")
+        if name == "review":
+            review.add_argument("--recovery-dir", metavar="PATH", help="new private directory outside reviewed inputs for client-owned recovery")
+        add_repository_arguments(review, paths=True, required=False)
 
     verify = commands.add_parser("verify", help="approve only when a matching approval is recorded")
     add_repository_arguments(verify, paths=True, required=False)
@@ -1401,6 +1576,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     review_doc.add_argument("--criterion", required=True, metavar="TEXT")
     review_doc.add_argument("--doc", required=True, metavar="PATH")
+    review_doc.add_argument("--recovery-dir", metavar="PATH", help="new private directory outside reviewed inputs for client-owned recovery")
 
     verify_doc = commands.add_parser(
         "verify-doc", help="approve only when the exact document text was approved"
@@ -1450,7 +1626,7 @@ def dispatch(
 ) -> int:
     if args.command in ("review-doc", "verify-doc", "consume-doc"):
         return dispatch_document(args, environ, git=git, launch=launch_doc or launch_document)
-    if args.command == "review":
+    if args.command in ("review", "preflight"):
         require_no_json_with_flags(args, "criterion", "repo", "paths", "guide")
         if args.json is not None:
             request = parse_request_json(args.json)
@@ -1462,13 +1638,19 @@ def dispatch(
             request = build_request(args.criterion, repositories_from_options(args))
             if args.guide is not None:
                 request = replace(request, guide=read_guide(args.guide))
-        return command_review(
-            request,
-            git=git,
-            launch=launch,
-            launcher=resolve_reviewer(environ),
-            timeout=resolve_timeout(environ),
-        )
+        launcher = resolve_reviewer(environ)
+        if args.command == "preflight":
+            snapshot = review_snapshot(request, launcher, git)
+            emit({"valid": True, "fingerprint": snapshot.fingerprint,
+                  "repositories": [repository.payload() for repository in request.repositories]})
+            return EXIT_OK
+        recovery = ReviewRecovery(args.recovery_dir, request) if args.recovery_dir else None
+        with recovery if recovery is not None else contextlib.nullcontext():
+            return command_review(
+                request, git=git,
+                launch=recovery.wrap_launch(launch, "--review") if recovery is not None else launch,
+                launcher=launcher, timeout=resolve_timeout(environ), recovery=recovery,
+            )
     if args.json is not None:
         require_no_json_with_flags(args, "repo", "paths")
         repositories = list(parse_request_json(args.json, require_review_fields=False).repositories)
@@ -1495,13 +1677,13 @@ def dispatch_document(
     criterion = args.criterion
     if args.command == "review-doc":
         request = build_document_request(criterion, path)
-        return command_review_doc(
-            request,
-            git=git,
-            launch=launch,
-            launcher=resolve_reviewer(environ),
-            timeout=resolve_timeout(environ),
-        )
+        recovery = ReviewRecovery(args.recovery_dir, request) if args.recovery_dir else None
+        with recovery if recovery is not None else contextlib.nullcontext():
+            return command_review_doc(
+                request, git=git,
+                launch=recovery.wrap_launch(launch, "--review-doc") if recovery is not None else launch,
+                launcher=resolve_reviewer(environ), timeout=resolve_timeout(environ), recovery=recovery,
+            )
     # verify and consume need the same criterion the approval was recorded with,
     # because the criterion is part of the fingerprint. Take it from the ledger
     # when the caller did not repeat it.
@@ -1529,6 +1711,9 @@ def main(
         return EXIT_ERROR
     except OSError as error:
         sys.stderr.write(f"task_review: {error}\n")
+        return EXIT_ERROR
+    except KeyboardInterrupt:
+        sys.stderr.write("task_review: the review was interrupted; no approval was returned\n")
         return EXIT_ERROR
 
 

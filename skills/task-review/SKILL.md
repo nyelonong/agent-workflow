@@ -58,14 +58,24 @@ Permit code/diff inspection, advisory guide authoring and client-owned approval
 metadata only; forbid source/document edits, scope changes, nested delegation,
 staging, commits, approval consumption and external mutations.
 
-The child prepares any guide from the actual inspected changes, runs the
-canonical gate once, reports the browser URL while waiting, and returns the
-validated result, exit code, review ID and saved request/result/recovery paths.
-Retain the native run/command handle and cancellation path; recover that owned
-gate before relaunching. Child prose alone cannot establish approval. The parent checks the
-canonical artifacts and applies annotations or stop decisions; it still owns
-`verify`/`verify-doc`, `consume`/`consume-doc`, corrections and commits. This runner
-does not replace any required independent code review or human decision.
+Run the maintained client directly in the child's foreground command with
+`--recovery-dir PATH`; the client creates the private directory and owns request,
+process, diagnostic and decision artifacts. Do not generate Python/shell launchers,
+PID files, output redirection, process substitution, or detached processes.
+The child needs read and foreground-command tools; write is needed only for an
+authored guide. The native async subagent run is the owner and cancellation handle:
+child-side background-command or supervisor-message tools are not prerequisites.
+
+The child prepares any guide from inspected changes, preflights it, runs the
+canonical gate once, and returns the validated result, exit code, review ID and
+recovery directory. Live stderr and `browser-url.txt` report the URL while the
+foreground command waits. The parent can read these artifacts without requiring
+the blocked child to send a progress message. Retain the native run handle and
+cancellation path; recover that owned gate before relaunching.
+Child prose alone cannot establish approval. The parent checks the canonical
+artifacts and applies annotations or stop decisions; it still owns
+`verify`/`verify-doc`, `consume`/`consume-doc`, corrections and commits.
+This runner does not replace required independent review or a human decision.
 
 In Pi, inspect `subagent({ action: "list", capabilities: true })` and
 `subagent({ action: "models" })`. With the `openai-codex` provider, pass
@@ -75,6 +85,12 @@ exists, stop. Launch with fresh context and `async: true` through `subagent`
 or `runs.run` in one async workflow. A childless `runs.host` gate is not
 delegation. Other adapters own their native launch, model-selection and waiting
 mechanics.
+
+Set the native command/run deadlines longer than the client's review timeout
+(`TASK_REVIEW_TIMEOUT`, default 1800 seconds), including preparation time.
+An open foreground tool while the client is `reviewing` is expected human waiting,
+not a failed or stuck gate; inspect its native state and recovery artifacts before
+interrupting it.
 
 ## Guided diff view
 
@@ -88,12 +104,19 @@ for complete diff review or proof that the explanation is true.
 
 Store guide JSON in a private location outside the reviewed repositories. Use
 `status --repo ROOT [--paths a,b]` (or `status --json REQUEST`) to obtain the scoped
-fingerprint; its non-approval exit is normal. Pass `review ... --guide PATH`, or
-include `guide` in the complete JSON request, never both. Follow the versioned
-format and bounds in the owning repository's README. Use canonical repository
-roots and captured current paths, including rename destinations; regenerate the
-guide after code/scope changes. Duplicate/out-of-scope references and stale guides
-fail; omitted scoped files remain visible under Other changes.
+fingerprint; its non-approval exit is normal. Before launching, run
+`preflight --criterion TEXT --repo ROOT [--paths a,b] --guide PATH`
+with exactly the intended scope, or `preflight --json REQUEST` for a complete
+request with an inline guide. Exit 0 means valid inputs, not approval; preflight
+opens no reviewer and changes no approval ledger. Correct private guide errors
+before invocation, retaining each `(repository, path)` in only one chapter.
+Do not silently drop a requested guide or weaken validation.
+
+Pass `review ... --guide PATH`, or include `guide` in the complete JSON request,
+never both. Follow the owning README's versioned format and bounds. Use canonical
+roots and current diff paths, including rename destinations; regenerate and
+preflight after code/scope changes. Duplicate/out-of-scope references and stale
+guides fail; omitted scoped files remain visible under Other changes.
 
 No harness model/network calls are made. Without an authored guide, Guided uses
 honestly labeled directory groups. Chapter checkboxes are session-only reading
@@ -103,6 +126,22 @@ progress, not decisions or exemptions. Guide-bearing reviews require the bundled
 ## Waiting and recovery
 
 Before capture, retain the criterion, exact scope/document, authorized phase and recovery location in supported history or an existing plan. Keep private command records outside the reviewed tree; do not create a plan merely to wait. Native adapters own command handles and waiting. Keep reviewed inputs unchanged through approval verification and use/consumption; record interim operational state externally. Recover the original command and result before relaunching. Unknown ownership or consequential outcome blocks replay and progression; it never implies approval.
+
+For delegated gates, pass a new or empty private recovery directory outside the
+reviewed inputs. Do not prepopulate it; the client creates it with mode 0700 and
+files with mode 0600. Existing nonempty directories are refused, never overwritten.
+Inspect `request.json`, `process.json`, `state.json`, `stderr.log`, and the native
+run before deciding whether a new invocation is safe. Recorded PIDs aid diagnosis;
+use native cancellation, not blind PID-based killing or replay.
+
+`state.json` distinguishes `starting`, `reviewing`, `finished`, and `error`.
+`finished` includes the human decision and exit code: exit 1 with
+`request-changes`, `return-to-planning`, or `cancelled` is not a launcher failure.
+`result.json` exists only after protocol, decision and ledger checks succeed;
+approval additionally requires unchanged reviewed inputs. Read `browser-url.txt`
+while waiting; it is withdrawn on normal
+completion, while the URL remains in `stderr.log`. Error state or missing result
+never grants approval. Recovery artifacts do not replace parent verification.
 
 ## Act on the decision
 
@@ -176,8 +215,12 @@ chat fallback is permitted; a supported replacement requires explicit authorizat
 The client is `scripts/task_review.py` in the repository that owns this skill.
 Resolve it there, never from the tree under review.
 
-- `review --criterion TEXT --repo ROOT [--paths a,b]` opens the review and
-  blocks until the human decides.
+- `review --criterion TEXT --repo ROOT [--paths a,b] --recovery-dir PATH`
+  opens the review, retains client-owned artifacts, and waits for a human decision.
+- `review-doc --criterion TEXT --doc PATH --recovery-dir PATH` does the same for
+  the technical plan.
+- `preflight --criterion TEXT --repo ROOT [--paths a,b] [--guide PATH]`
+  checks inputs without opening a review or changing an approval.
 - `verify --repo ROOT [--paths a,b]` checks the recorded approval against the
   current tree.
 - `consume --repo ROOT` retires the approval after the commit.

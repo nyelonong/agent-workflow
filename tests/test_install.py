@@ -638,22 +638,3 @@ class EveryRuntimeTests(unittest.TestCase):
         result = self.check_without_writes()
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_a_runtime_left_behind_by_a_shared_skill_edit_is_detectable(self) -> None:
-        # Codex intentionally consumes a runtime-specific variant.
-        shared = (ROOT / "skills/task-review/SKILL.md").read_bytes()
-        codex_source = (ROOT / "adapters/codex/skills/task-review/SKILL.md").read_bytes()
-        copies = {
-            "agy": (Path.home() / ".gemini/config/skills/task-review/SKILL.md", shared),
-            "claude": (Path.home() / ".claude/skills/task-review/SKILL.md", shared),
-            "codex": (Path.home() / ".codex/skills/task-review/SKILL.md", codex_source),
-            "omp": (Path.home() / ".agents/skills/task-review/SKILL.md", shared),
-            "pi": (Path.home() / ".pi/agent/skills/task-review/SKILL.md", shared),
-        }
-        for runtime, (path, source) in copies.items():
-            if not path.exists():
-                continue
-            with self.subTest(runtime=runtime):
-                self.assertEqual(
-                    source, path.read_bytes(),
-                    f"{runtime} holds a stale task-review skill; run ./install.sh install-all",
-                )

@@ -27,8 +27,12 @@ Give the child the approved criterion, exact scope/document, owning client,
 verification evidence and private recovery directory. It may inspect code,
 author the advisory guide and run the canonical client; it may not edit reviewed
 inputs, widen scope, spawn children, stage, commit or consume approval. The gate
-runner executes directly and does not delegate again. It returns the URL,
-validated result, exit code, review ID and saved command/request/result records.
+runner executes the maintained client directly with `--recovery-dir PATH` and
+does not delegate again. The client saves its exact request, process record,
+live diagnostics, state and validated result. Do not generate launch scripts,
+PID files, shell redirection, process substitution or detached commands.
+Read and foreground-command tools suffice; write is needed only for guides,
+and optional child progress messaging is not a prerequisite.
 The parent must inspect the canonical artifacts, apply annotations or stop
 decisions, and own exact-state verification and approval consumption. This is
 not independent code review and never replaces the human decision.
@@ -54,6 +58,12 @@ README. Use canonical repository roots and current diff paths (rename destinatio
 Pass `review ... --guide PATH` or inline `guide` in the saved complete JSON request,
 never combine `--guide` with `--json`. Capture that request before launch and keep
 it unchanged; regenerate the guide after code or scope changes.
+Before invocation, run `preflight` with the same criterion, scope and guide
+(`--json REQUEST` or `--criterion TEXT --repo ROOT [--paths a,b] --guide PATH`).
+Exit 0 means valid inputs, not approval; no reviewer or ledger write occurs.
+Correct private guide errors before launching; each `(repository, path)` belongs
+in only one chapter. Regenerate and preflight after any code or scope change.
+
 
 Guide-bearing reviews require the bundled `html` backend. Invalid, stale, duplicate
 or unknown references fail; unassigned files remain under Other changes. Without a
@@ -62,11 +72,25 @@ reading, not approval. No model/network calls or document-review changes are add
 
 ## Await the HTML decision
 
-Before launch, save the criterion, exact repository/path scope or document, checkout, branch, HEAD, pending phase and authorized next action. Use the existing plan's partial checkpoint when it can be updated before the snapshot; do not create a plan just for a review. Keep operational review files in a unique private local directory outside the reviewed tree, with directory mode 0700 and file mode 0600. Record its path in the checkpoint or supported session history, finish any checkpoint edits, then calculate and save the expected fingerprint in the private record. These files recover command execution; they are not a second plan or an approval source.
+Before launch, retain the criterion, exact scope/document, checkout, branch,
+HEAD, pending phase and authorized next action in supported session history or
+an existing plan. Finish checkpoint edits before capture; do not create a plan
+merely to wait. Supply a new or empty private recovery directory outside reviewed
+inputs with `--recovery-dir PATH`; the client creates it and refuses a nonempty
+directory rather than overwriting an existing run.
 
-For a diff review, save a complete request with a unique `review_id` and pass that same request through `review --json REQUEST`. Obtain the expected fingerprint with `status --json REQUEST`; its non-approval exit code is normal when no approval exists. For `review-doc --criterion TEXT --doc PATH`, record the document fingerprint and save the generated review ID from the page's read-only `api/doc` payload when available. If a fast decision completes first, record the ID from that same client invocation's completed validated result, correlated with its unique wrapper launch record, document, criterion, fingerprint, exit status and ledger. Missing launch provenance is a recovery gap; a result or ledger alone is insufficient. Do not submit a decision or operate the human's review controls.
+Run `review --criterion TEXT --repo ROOT [--paths a,b] --recovery-dir PATH`,
+`review --json REQUEST --recovery-dir PATH`, or
+`review-doc --criterion TEXT --doc PATH --recovery-dir PATH` directly in the
+child's foreground command. Retain the native child and command/session handles
+with their supported cancellation path. Set native run/tool deadlines longer
+than the client's timeout (default 1800 seconds) plus preparation time.
 
-Run the client through a foreground shell wrapper that saves its final stdout, stderr and exit status separately and returns that same status. Set `HTML_REVIEW_URL_FILE` to a file in the private directory; the launcher otherwise buffers the URL on stderr until completion. Save the supported command/session handle as soon as it is returned. Do not detach the command or launch another review because the first call yielded.
+The client owns `request.json`, `process.json`, `state.json`, `stderr.log` and
+the validated `result.json`; it sets `browser-url.txt` automatically for HTML.
+Diagnostics stream immediately. Match request/result IDs and scope, and inspect
+the recorded fingerprint, exit code and ledger; artifacts are not approval
+without parent verification. Never submit a decision or operate review controls.
 
 Read the URL file using bounded startup checks, present the link in commentary, and await the same command in intervals of about 30 seconds. When the runtime exposes `exec_command`/`write_stdin`, poll the returned command session with `write_stdin`; when an enclosing `functions.exec` yields a cell ID, await that cell with `functions.wait` before resuming its command session. Use only the handles actually returned, and stop polling a handle once completion is reported. Keep the turn active and give brief progress updates at least every 60 seconds. An expired wait interval means pending, not reviewer timeout, failure or approval. Do not disable the reviewer's lifetime limits to keep waiting.
 
@@ -74,7 +98,14 @@ If the URL cannot be recovered, inspect diagnostics and command state; do not re
 
 ## Act on the result
 
-After the command completes, read its final JSON, annotations, diagnostics and exit status. Match the result's protocol version and review ID to this review; missing, incomplete or inconsistent artifacts require recovery, not an inferred decision. An HTML submission is the human decision for this gate; do not ask for the same approval or change request again in chat. It does not authorize another phase, changed scope or a remote action beyond existing approval.
+After completion, inspect the client-owned artifacts. `state.json` distinguishes
+`starting`, `reviewing`, `finished` and `error`; `finished` contains a decision
+and exit code, whereas `error` grants no approval. Read the validated result,
+annotations and diagnostics, matching protocol version and review ID to
+`request.json` and the native owned run. Missing or inconsistent artifacts require
+recovery, not an inferred decision. A human HTML submission is the decision for
+this gate; do not ask for the same approval again in chat. It does not authorize
+another phase, changed scope or a remote action beyond existing approval.
 
 The command exits 0 only for `approve`.
 

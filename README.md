@@ -24,7 +24,8 @@ TARGET="$(cd /path/to/your/git-repository && pwd -P)"
 
 python3 "$HARNESS/scripts/task_review.py" review \
   --criterion "The approved change and its tests are correct" \
-  --repo "$TARGET" --paths src/example.py,tests/test_example.py
+  --repo "$TARGET" --paths src/example.py,tests/test_example.py \
+  --recovery-dir /absolute/private/new-review
 ```
 
 | Input | Rule |
@@ -41,6 +42,35 @@ python3 "$HARNESS/scripts/task_review.py" review \
 | **Return to planning** | Stop; revisit scope/plan |
 | **Cancelled** | Stop |
 
+### Delegated launch and recovery
+
+Invoke the canonical client in the native gate subagent's foreground command.
+Do not generate launch scripts, PID files, shell redirection or detached commands.
+The native async run supplies ownership, waiting and cancellation; optional
+child-side progress messaging is not required. Set native run/tool deadlines
+longer than the client timeout (default 1800 seconds) plus preparation time.
+
+`--recovery-dir` works with both `review` and `review-doc`. It is optional for
+manual callers and required by the delegated workflow. Supply a new or empty
+private directory outside the reviewed inputs; the client creates it with mode
+0700 and artifacts with mode 0600. Existing nonempty directories are refused.
+
+| Artifact | Meaning |
+| --- | --- |
+| `request.json` | Exact canonical request, criterion, scope and review ID |
+| `process.json` | Client/reviewer PIDs and reviewer argv; diagnostic ownership evidence, not permission to blindly kill a reused PID |
+| `state.json` | `starting`, `reviewing`, `finished`, or `error`; finished state includes decision/exit code |
+| `stderr.log` | Live reviewer diagnostics, including the browser URL |
+| `browser-url.txt` | HTML page URL while waiting; withdrawn on normal completion |
+| `result.json` | Validated decision after ledger recording; approval also requires unchanged reviewed inputs |
+
+Reviewer stderr is forwarded immediately, independently of stdout's single
+validated result line. An open native tool while the client is `reviewing` is
+normally waiting for a human, not a launch failure. Exit 0 means approve; exit 1
+with a decision means human non-approval; exit 2 means an error. Missing result or
+an error never grants approval. Inspect native state and saved artifacts before
+relaunching; recovery does not replace `verify`/`verify-doc` or `consume`.
+
 ### Guided tab (HTML)
 
 **Diff** remains the default. **Guided** shows an overview, before/after cards,
@@ -55,11 +85,21 @@ the reviewed repository. Get the current fingerprint with the **same repo/path s
 ```sh
 python3 "$HARNESS/scripts/task_review.py" status --repo "$TARGET" --paths src/example.py,tests/test_example.py
 # Exit 1 is normal when no approval exists; read the fingerprint in its JSON output.
+python3 "$HARNESS/scripts/task_review.py" preflight \
+  --criterion "The approved change and its tests are correct" \
+  --repo "$TARGET" --paths src/example.py,tests/test_example.py \
+  --guide /absolute/private/path/guide.json
 python3 "$HARNESS/scripts/task_review.py" review \
   --criterion "The approved change and its tests are correct" \
   --repo "$TARGET" --paths src/example.py,tests/test_example.py \
   --guide /absolute/private/path/guide.json
 ```
+
+`preflight` returns 0 only for valid scope/guide inputs; it opens no browser and
+does not change any approval ledger. Duplicate, stale or out-of-scope guide
+references fail before invocation. Correct private guide errors, then preflight
+again. The actual review repeats validation; preflight is never approval.
+
 
 Guide format (replace the fingerprint and repository root):
 

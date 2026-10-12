@@ -9,7 +9,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+import selectors
+import signal
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -805,6 +808,19 @@ class DocumentCommandTests(unittest.TestCase):
         self.assertEqual(task_review.EXIT_NOT_APPROVED, after.returncode)
         self.assertEqual("consumed", json.loads(after.stdout)["state"])
 
+    def test_document_recovery_preserves_the_document_request_and_verified_decision(self):
+        recovery = self.root.parent / "document recovery"
+        result = self.run_client(
+            "review-doc", *self.criterion_args(), "--recovery-dir", str(recovery), template=self.APPROVE,
+        )
+        self.assertEqual(task_review.EXIT_OK, result.returncode, result.stderr)
+        request = json.loads((recovery / "request.json").read_text())
+        self.assertEqual(str(self.doc), request["path"])
+        self.assertNotIn("repositories", request)
+        self.assertEqual(json.loads(result.stdout), json.loads((recovery / "result.json").read_text()))
+        verified = self.run_client("verify-doc", *self.criterion_args(), template=self.APPROVE)
+        self.assertEqual(task_review.EXIT_OK, verified.returncode, verified.stderr)
+
     def test_editing_the_spec_after_approval_invalidates_it(self) -> None:
         reviewed = self.run_client("review-doc", *self.criterion_args(), template=self.APPROVE)
         self.assertEqual(task_review.EXIT_OK, reviewed.returncode, reviewed.stderr)
@@ -964,6 +980,245 @@ class GuidedReviewTests(ReviewCase):
         code, out, error = self.invoke("review", "--json", request.to_json(), "--guide", str(path))
         self.assertEqual(task_review.EXIT_ERROR, code, out)
         self.assertIn("--guide", error)
+
+
+class RecoveryFlowTests(ReviewCase):
+    def recovery(self) -> Path:
+        return self.base / "private recovery"
+
+    def read_recovery(self, name: str) -> dict:
+        return json.loads((self.recovery() / name).read_text())
+
+    def test_validated_result_and_exact_request_are_retained(self):
+        result = self.review("--recovery-dir", str(self.recovery()), "--paths", "a.py")
+        self.assertEqual(task_review.EXIT_OK, result.returncode, result.stderr)
+        decision = self.assertSingleJsonLine(result)
+        self.assertEqual(decision, self.read_recovery("result.json"))
+        request = self.read_recovery("request.json")
+        self.assertEqual(decision["review_id"], request["review_id"])
+        self.assertEqual([{"root": str(self.root), "paths": ["a.py"]}], request["repositories"])
+        state = self.read_recovery("state.json")
+        self.assertEqual(("finished", "approve", 0), (state["state"], state["decision"], state["exit_code"]))
+        self.assertEqual(task_review.EXIT_OK, self.verify("--paths", "a.py").returncode)
+        self.assertEqual(0o700, stat.S_IMODE(self.recovery().stat().st_mode))
+        for artifact in self.recovery().iterdir():
+            self.assertEqual(0o600, stat.S_IMODE(artifact.stat().st_mode), artifact.name)
+
+    def test_nonapproval_is_a_finished_decision_not_a_launcher_error(self):
+        result = self.review("--recovery-dir", str(self.recovery()), STUB_RESULT=REJECT)
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, result.returncode, result.stderr)
+        self.assertEqual("request-changes", self.read_recovery("result.json")["decision"])
+        state = self.read_recovery("state.json")
+        self.assertEqual(("finished", 1), (state["state"], state["exit_code"]))
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, self.verify().returncode)
+
+    def test_malformed_result_retains_error_without_an_approval_artifact(self):
+        result = self.review("--recovery-dir", str(self.recovery()), STUB_MODE="garbage")
+        self.assertNoApproval(result)
+        self.assertFalse((self.recovery() / "result.json").exists())
+        state = self.read_recovery("state.json")
+        self.assertEqual(("error", 2), (state["state"], state["exit_code"]))
+        self.assertIn("JSON", state["error"])
+
+    def test_approval_for_changed_inputs_is_not_retained_as_a_result(self):
+        result = self.review(
+            "--recovery-dir", str(self.recovery()), STUB_MODE="mutate", STUB_MUTATE=str(self.root / "a.py"),
+        )
+        self.assertNoApproval(result)
+        self.assertFalse((self.recovery() / "result.json").exists())
+        self.assertIn("changed while the human", self.read_recovery("state.json")["error"])
+
+    def test_recovery_storage_failure_cannot_leave_a_verifiable_approval(self):
+        document = self.root / "plan.md"
+        document.write_text("# Approved plan\n")
+        replace_file = os.replace
+        for command in ("review", "review-doc"):
+            for artifact in ("result.json", "state.json"):
+                with self.subTest(command=command, artifact=artifact):
+                    directory = self.base / f"{command}-{artifact}"
+                    scope = ["--repo", str(self.root)] if command == "review" else ["--doc", str(document)]
+                    args = task_review.build_parser().parse_args(
+                        [command, "--criterion", "ship it", *scope, "--recovery-dir", str(directory)],
+                    )
+
+                    def fail_final_write(source, destination):
+                        if Path(destination).name == artifact:
+                            payload = json.loads(Path(source).read_text())
+                            if artifact == "result.json" or payload.get("state") == "finished":
+                                raise OSError("recovery storage unavailable")
+                        return replace_file(source, destination)
+
+                    with self.captured(), mock.patch.object(task_review.os, "replace", side_effect=fail_final_write):
+                        with self.assertRaises(OSError):
+                            task_review.dispatch(
+                                args, {}, git=task_review.run_git,
+                                launch=GuidedReviewTests.approve, launch_doc=GuidedReviewTests.approve,
+                            )
+                    verify_command = "verify" if command == "review" else "verify-doc"
+                    verified = self.run_client(verify_command, *scope)
+                    self.assertEqual(task_review.EXIT_NOT_APPROVED, verified.returncode, verified.stdout)
+                    self.assertEqual("error", json.loads((directory / "state.json").read_text())["state"])
+
+    def test_complete_multi_repository_scope_is_retained_and_verified_together(self):
+        other = self.make_repo("second repository")
+        (other / "a.py").write_text("second change\n")
+        result = self.run_client(
+            "review", "--criterion", "ship both", "--repo", str(self.root), "--repo", str(other),
+            "--recovery-dir", str(self.recovery()),
+        )
+        self.assertEqual(task_review.EXIT_OK, result.returncode, result.stderr)
+        verify = self.run_client("verify", "--repo", str(self.root), "--repo", str(other))
+        self.assertEqual(task_review.EXIT_OK, verify.returncode, verify.stderr)
+        (other / "a.py").write_text("changed after approval\n")
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, self.run_client(
+            "verify", "--repo", str(self.root), "--repo", str(other),
+        ).returncode)
+
+    def test_existing_run_is_not_overwritten_or_relaunched(self):
+        first = self.review("--recovery-dir", str(self.recovery()))
+        self.assertEqual(task_review.EXIT_OK, first.returncode, first.stderr)
+        saved = {p.name: p.read_bytes() for p in self.recovery().iterdir()}
+        second = self.review("--recovery-dir", str(self.recovery()))
+        self.assertEqual(task_review.EXIT_ERROR, second.returncode, second.stderr)
+        self.assertIn("recover", second.stderr)
+        self.assertEqual(saved, {p.name: p.read_bytes() for p in self.recovery().iterdir()})
+        self.assertEqual(task_review.EXIT_OK, self.verify().returncode)
+
+    def test_recovery_inside_reviewed_tree_or_public_directory_is_rejected(self):
+        public = self.base / "public"
+        public.mkdir(mode=0o755)
+        for path in (self.root / "recovery", public):
+            with self.subTest(path=path):
+                result = self.review("--recovery-dir", str(path))
+                self.assertEqual(task_review.EXIT_ERROR, result.returncode, result.stderr)
+                self.assertEqual([], self.entries())
+        self.assertFalse((self.root / "recovery").exists())
+
+    @unittest.skipUnless(os.name == "posix", "native startup cancellation requires POSIX")
+    def test_cancellation_during_process_recording_reaps_the_reviewer(self):
+        self.launcher.write_text("#!/usr/bin/env python3\nimport signal\nsignal.pause()\n")
+        bootstrap = (
+            "import os,signal,sys; "
+            f"sys.path.insert(0,{str(ROOT / 'scripts')!r}); "
+            "import task_review; original=task_review.ReviewRecovery.reviewer_started\n"
+            "def started(self,pid,command):\n"
+            " original(self,pid,command)\n"
+            " os.kill(os.getpid(),signal.SIGTERM)\n"
+            "task_review.ReviewRecovery.reviewer_started=started\n"
+            "sys.exit(task_review.main(sys.argv[1:]))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", bootstrap, "review", "--criterion", "ship it",
+             "--repo", str(self.root), "--recovery-dir", str(self.recovery())],
+            capture_output=True, env=self.env(), timeout=10,
+        )
+        record = self.read_recovery("process.json")
+        pid = record["reviewer_pid"]
+
+        def cleanup() -> None:
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        self.addCleanup(cleanup)
+        self.assertEqual(task_review.EXIT_ERROR, result.returncode, result.stderr.decode())
+        self.assertEqual(b"", result.stdout)
+        self.assertEqual("error", self.read_recovery("state.json")["state"])
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, self.verify().returncode)
+
+    @unittest.skipUnless(os.name == "posix", "FIFO handshake and native cancellation require POSIX")
+    def test_live_diagnostics_arrive_before_decision_and_cancellation_reaps_reviewer(self):
+        fifo = self.base / "decision"
+        os.mkfifo(fifo)
+        self.launcher.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os,sys\n"
+            "print('review page ready', file=sys.stderr, flush=True)\n"
+            "with open(os.environ['DECISION_FIFO'], 'rb') as stream: stream.read(1)\n"
+        )
+        process = subprocess.Popen(
+            [sys.executable, str(CLIENT), "review", "--criterion", "ship it",
+             "--repo", str(self.root), "--recovery-dir", str(self.recovery())],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=self.env(DECISION_FIFO=str(fifo)),
+        )
+        def cleanup() -> None:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                record = self.recovery() / "process.json"
+                if record.exists():
+                    pid = json.loads(record.read_text()).get("reviewer_pid")
+                    if pid is not None:
+                        try:
+                            os.killpg(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                process.kill()
+                process.communicate(timeout=10)
+
+        self.addCleanup(cleanup)
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stderr, selectors.EVENT_READ)
+            self.assertTrue(selector.select(10), "reviewer diagnostics were buffered until exit")
+            self.assertEqual(b"review page ready\n", process.stderr.readline())
+        self.assertIsNone(process.poll())
+        state = self.read_recovery("state.json")
+        self.assertEqual("reviewing", state["state"])
+        reviewer_pid = self.read_recovery("process.json")["reviewer_pid"]
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        self.assertEqual(task_review.EXIT_ERROR, process.returncode, stderr.decode())
+        self.assertEqual(b"", stdout)
+        self.assertEqual("error", self.read_recovery("state.json")["state"])
+        with self.assertRaises(ProcessLookupError):
+            os.kill(reviewer_pid, 0)
+        self.assertEqual(task_review.EXIT_NOT_APPROVED, self.verify().returncode)
+
+
+class PreflightTests(ReviewCase):
+    guide = GuidedReviewTests.guide
+
+    def test_valid_guide_preflight_does_not_change_existing_approval(self):
+        self.assertEqual(task_review.EXIT_OK, self.review("--paths", "a.py").returncode)
+        ledger = (self.root / ".git" / task_review.LEDGER_NAME).read_bytes()
+        guide = self.base / "guide.json"
+        guide.write_text(json.dumps(self.guide()))
+        result = self.run_client(
+            "preflight", "--criterion", "ship it", "--repo", str(self.root), "--paths", "a.py",
+            "--guide", str(guide), **{task_review.REVIEWER_ENV: "html"},
+        )
+        self.assertEqual(task_review.EXIT_OK, result.returncode, result.stderr)
+        payload = self.assertSingleJsonLine(result)
+        self.assertEqual(self.guide()["fingerprint"], payload["fingerprint"])
+        self.assertNotIn("decision", payload)
+        self.assertEqual(ledger, (self.root / ".git" / task_review.LEDGER_NAME).read_bytes())
+
+    def test_duplicate_stale_and_out_of_scope_guides_fail_without_ledger_mutation(self):
+        for problem in ("duplicate", "stale", "scope"):
+            with self.subTest(problem=problem):
+                value = self.guide()
+                if problem == "duplicate":
+                    value["chapters"].append(value["chapters"][0])
+                elif problem == "stale":
+                    value["fingerprint"] = "0" * 64
+                else:
+                    value["chapters"][0]["files"][0]["path"] = "other/b.txt"
+                guide = self.base / "guide.json"
+                guide.write_text(json.dumps(value))
+                result = self.run_client(
+                    "preflight", "--criterion", "ship it", "--repo", str(self.root), "--paths", "a.py",
+                    "--guide", str(guide), **{task_review.REVIEWER_ENV: "html"},
+                )
+                self.assertEqual(task_review.EXIT_ERROR, result.returncode, result.stderr)
+                self.assertIn({"duplicate": "duplicate", "stale": "stale", "scope": "outside the captured diff"}[problem], result.stderr)
+                self.assertEqual("", result.stdout)
+                self.assertEqual([], self.entries())
 
 
 if __name__ == "__main__":

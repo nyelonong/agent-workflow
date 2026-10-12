@@ -27,9 +27,9 @@ Environment:
 
     HTML_REVIEW_NO_BROWSER=1   serve the page without opening it; the URL is
                                printed on stderr either way
-    HTML_REVIEW_URL_FILE=PATH  write the page URL to PATH (0600) while the
-                               review runs, for a caller that drives the page
-                               itself and therefore cannot read stderr
+    HTML_REVIEW_URL_FILE=PATH  publish the live page URL to a private file for
+                               callers that cannot read the streamed stderr;
+                               remove the file when the review ends
 """
 from __future__ import annotations
 
@@ -63,9 +63,7 @@ HOST = "127.0.0.1"
 # set it; a human who prefers to paste the printed URL can too.
 NO_BROWSER_ENV = "HTML_REVIEW_NO_BROWSER"
 
-# The client's launcher only forwards a reviewer's stderr once the review is
-# over, so anything that has to reach the page during the review -- a wrapper
-# that opens it itself, an automated harness -- learns the URL from this file.
+# The live URL file supports callers that cannot read streamed diagnostics.
 # It is written 0600 while the review runs and removed when it ends.
 URL_FILE_ENV = "HTML_REVIEW_URL_FILE"
 
