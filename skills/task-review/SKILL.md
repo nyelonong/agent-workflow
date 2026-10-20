@@ -23,11 +23,13 @@ that state. It owns the diff; you never restate it.
 
 ## Delegation
 
-In every coding-agent runtime, always delegate preparation and invocation of
-both `review` and `review-doc` to one bounded native subagent. This is a workflow
-requirement, not a runtime guard. A parent-owned background command with no
-subagent is not delegation. The delegated gate runner executes the client
-directly and must not delegate again.
+In every coding-agent runtime, delegate canonical request preparation and
+invocation of `review` and `review-doc` to one bounded native gate runner.
+Optional guide authoring is a separately supervised, preparation-only phase:
+it may resume into the gate after success, or be replaced by a launch-only runner
+after a settled failure/timeout. Only one runner may invoke the actual review.
+A parent-owned background command is not delegation; the gate runner executes
+the client directly and must not delegate again.
 
 Use **GPT-6 Luna (`gpt-6-luna`)** for every plan and diff gate runner unless the
 runtime adapter explicitly names a different fixed task-review model. Use that
@@ -66,12 +68,13 @@ The child needs read and foreground-command tools; write is needed only for an
 authored guide. The native async subagent run is the owner and cancellation handle:
 child-side background-command or supervisor-message tools are not prerequisites.
 
-The child prepares any guide from inspected changes, preflights it, runs the
-canonical gate once, and returns the validated result, exit code, review ID and
-recovery directory. Live stderr and `browser-url.txt` report the URL while the
-foreground command waits. The parent can read these artifacts without requiring
-the blocked child to send a progress message. Retain the native run handle and
-cancellation path; recover that owned gate before relaunching.
+The parent chooses the guide outcome under the bounded preparation rules below.
+The gate runner receives either a preflighted guide or explicit `guide: none`;
+launch-only runners must not generate or repair guides. Run the canonical gate
+once and return the validated result, exit code, review ID and recovery directory.
+Live stderr and `browser-url.txt` report the URL during the human wait. The parent
+can read them without requiring the blocked child to send a progress message.
+Retain the native run/cancellation handle and recover it before relaunching.
 Child prose alone cannot establish approval. The parent checks the canonical
 artifacts and applies annotations or stop decisions; it still owns
 `verify`/`verify-doc`, `consume`/`consume-doc`, corrections and commits.
@@ -86,8 +89,21 @@ or `runs.run` in one async workflow. A childless `runs.host` gate is not
 delegation. Other adapters own their native launch, model-selection and waiting
 mechanics.
 
-Set the native command/run deadlines longer than the client's review timeout
-(`TASK_REVIEW_TIMEOUT`, default 1800 seconds), including preparation time.
+For Pi's guide-only phase, use a top-level single-child preparation run so its
+returned run `id` is also the stop target; do not use a nested `runs.run` child
+for this stop recipe. Retain a monotonic 120-second deadline and wait with
+`subagent_wait({ id, timeoutMs: remainingMs, stopOnAttention: false })` only when
+`remainingMs` is a positive integer. If the budget is already exhausted, go
+directly to stop-and-settle, not another wait.
+A wait timeout leaves the child running: use `subagent({ action: "stop", id })`,
+then settle its terminal native state before plain fallback. Attention is not
+completion; any continued wait uses the remaining budget, not another 120 seconds.
+Check the same deadline again before accepting completed output/preflight.
+Keep the launch-only review phase separate, with its normal human-wait limits.
+
+Set launch-only command/run deadlines longer than the client's review timeout
+(`TASK_REVIEW_TIMEOUT`, default 1800 seconds). The guide-only phase has its own
+short deadline and no authority to invoke a reviewer.
 An open foreground tool while the client is `reviewing` is expected human waiting,
 not a failed or stuck gate; inspect its native state and recovery artifacts before
 interrupting it.
@@ -95,28 +111,49 @@ interrupting it.
 ## Guided diff view
 
 The bundled HTML page opens **Diff** by default and offers **Guided** beside it.
-For a nontrivial diff, prepare an agent-authored guide from inspected code before
-launching the gate: before/after behavior, optional ordered flow labels, and
-whole-file chapters with explanations. Order chapters by the change's logic and
-review risk; do not bury consequential database or security changes as boilerplate.
-The actual diff remains authoritative; the guide is advisory, not a replacement
-for complete diff review or proof that the explanation is true.
+For nontrivial diffs, attempt a concise agent-authored guide as a best-effort
+enhancement, not a prerequisite for human review. Include inspected before/after
+behavior, optional flow labels and whole-file chapters ordered by logic and risk.
+The real complete diff remains authoritative.
 
-Store guide JSON in a private location outside the reviewed repositories. Use
-`status --repo ROOT [--paths a,b]` (or `status --json REQUEST`) to obtain the scoped
-fingerprint; its non-approval exit is normal. Before launching, run
-`preflight --criterion TEXT --repo ROOT [--paths a,b] --guide PATH`
-with exactly the intended scope, or `preflight --json REQUEST` for a complete
-request with an inline guide. Exit 0 means valid inputs, not approval; preflight
-opens no reviewer and changes no approval ledger. Correct private guide errors
-before invocation, retaining each `(repository, path)` in only one chapter.
-Do not silently drop a requested guide or weaken validation.
+The parent enforces a **120-second total preparation deadline** from native
+dispatch, including inspection, authoring and preflight. The preparation packet
+must explicitly forbid `review`/`review-doc`, source edits and approval metadata;
+the preparer may only read and write its private guide artifacts. Use a native
+bounded wait/deadline and retain the cancellation handle, not a model's promise
+to finish quickly. If supported deadline/cancellation/settlement is unavailable,
+skip optional guide preparation immediately; the native human gate is still
+required. Do not apply this short deadline to human review.
 
-Pass `review ... --guide PATH`, or include `guide` in the complete JSON request,
-never both. Follow the owning README's versioned format and bounds. Use canonical
-roots and current diff paths, including rename destinations; regenerate and
-preflight after code/scope changes. Duplicate/out-of-scope references and stale
-guides fail; omitted scoped files remain visible under Other changes.
+Store guide JSON privately outside reviewed repositories and the client recovery
+directory. Obtain the exact scoped fingerprint with `status --repo ROOT
+[--paths a,b]` or `status --json REQUEST`; exit 1 for no approval is normal.
+Preflight the intended criterion, scope and guide before any review invocation.
+Each `(repository, path)` belongs to one chapter. Preflight opens no reviewer,
+changes no ledger and never establishes approval.
+
+On preparation failure, invalid/missing output, guide preflight rejection or the
+deadline, **skip the guide without retrying or asking the user again**. Cancel
+and settle a still-running preparer through native controls; ignore late output.
+Do not launch a replacement until ownership is resolved. Explicit user
+cancellation stops the task, not just the guide. If preparation invoked a review
+despite its phase restriction, recover that owned gate and honor its outcome;
+never turn a failed/cancelled/unknown review into an automatic replacement.
+
+Retain the same criterion and repository/path scope for the plain fallback.
+Remove only the optional guide: omit `--guide`, or remove the inline `guide`
+field before invoking a new canonical request. Plain preflight must pass first;
+repository, scope, permission or other non-guide failures remain blockers.
+Report briefly that the guide was skipped and why. The complete diff still
+opens for the human; no placeholder, fabricated explanation or alternate model.
+
+Accept a guide only if actual output validation and preflight finish before the
+same absolute preparation deadline; a completed native result alone is not enough.
+If already expired, discard even valid late output and use plain fallback.
+Otherwise stop the preparation timer and hand the exact guide/scope to the runner.
+Pass `--guide PATH` or an inline guide, never both. The actual review repeats strict
+validation. Any failure after canonical review invocation follows the gate's
+normal stop/recovery rules; it is not a guide-fallback trigger.
 
 No harness model/network calls are made. Without an authored guide, Guided uses
 honestly labeled directory groups. Chapter checkboxes are session-only reading
@@ -212,8 +249,7 @@ chat fallback is permitted; a supported replacement requires explicit authorizat
 
 ## Commands
 
-The client is `scripts/task_review.py` in the repository that owns this skill.
-Resolve it there, never from the tree under review.
+The client is the trusted workflow harness's `scripts/task_review.py`, never a script in the repository under review. For omp, resolve the physical `skill://task-review` directory first: it is `<harness>/skills/task-review`, so its client is two parent directories above it at `<harness>/scripts/task_review.py`. For this installation that resolves to `/Users/zaki/Projects/personal/agent-workflow/scripts/task_review.py`.
 
 - `review --criterion TEXT --repo ROOT [--paths a,b] --recovery-dir PATH`
   opens the review, retains client-owned artifacts, and waits for a human decision.
