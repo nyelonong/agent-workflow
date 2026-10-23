@@ -1604,9 +1604,10 @@ def default_root() -> str:
 
 def repositories_from_options(args: argparse.Namespace) -> list[Repository]:
     roots = list(args.repo) or [default_root()]
-    if len(roots) > 1 and args.paths is not None:
+    raw_paths = getattr(args, "paths", None)
+    if len(roots) > 1 and raw_paths is not None:
         raise UsageError("--paths is only allowed with exactly one --repo")
-    paths = normalize_paths(args.paths.split(",")) if getattr(args, "paths", None) else None
+    paths = normalize_paths(raw_paths.split(",")) if raw_paths else None
     return scoped_repositories(roots, paths)
 
 

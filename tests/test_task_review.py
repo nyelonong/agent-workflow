@@ -594,6 +594,17 @@ class LedgerTests(ReviewCase):
         self.assertEqual(task_review.EXIT_NOT_APPROVED, single.returncode, single.stderr)
         self.assertIn("changed since", self.assertSingleJsonLine(single)["reason"])
 
+    def test_consume_and_revoke_accept_every_reviewed_repository(self) -> None:
+        other = self.make_repo("second")
+        (other / "a.py").write_text("print('changed')\n", encoding="utf-8")
+        both = ["--repo", str(self.root), "--repo", str(other)]
+        for command, state in (("consume", "consumed"), ("revoke", "superseded")):
+            self.assertEqual(task_review.EXIT_OK, self.run_client("review", "--criterion", "ship both", *both).returncode)
+            closed = self.run_client(command, *both)
+            self.assertEqual(task_review.EXIT_OK, closed.returncode, closed.stderr)
+            self.assertEqual(state, self.assertSingleJsonLine(closed)["state"])
+            self.assertEqual(task_review.EXIT_NOT_APPROVED, self.run_client("verify", *both).returncode)
+
     def test_status_falls_back_to_the_working_directory(self) -> None:
         self.review()
         status = self.run_client("status", cwd=self.root)
