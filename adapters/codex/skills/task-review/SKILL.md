@@ -13,9 +13,10 @@ The client is `scripts/task_review.py` in the repository that owns this skill; r
 
 ## Delegation
 
-Always delegate preparation and invocation of both `review` and `review-doc`
-to one bounded native subagent, following the [shared model-selection and authority
-policy](../../../../skills/task-review/SKILL.md#delegation). Always use GPT-6 Luna
+Delegate canonical request preparation and invocation of `review`/`review-doc`
+to one bounded native gate runner, following the [shared guide-phase, model and
+authority policy](../../../../skills/task-review/SKILL.md#delegation). Optional
+guide preparation is separately bounded and cannot invoke a reviewer. Use GPT-6 Luna
 (`gpt-6-luna`) within the current provider's available runtime scope. Do not compare
 prices, inherit the parent's model or substitute another model/version; if Luna
 is unavailable or disallowed, stop and ask the user. Keep the parent's model
@@ -45,30 +46,36 @@ parent turn.
 
 ## Guided diff view
 
-The HTML page keeps **Diff** selected by default and adds **Guided**. For nontrivial
-diffs, author a local guide from inspected code: before/after behavior, optional
-ordered flow labels, and explained whole-file chapters ordered by logic and risk.
-Do not bury consequential database/security changes. Narration is advisory; the
-real complete diff and existing approval checks remain authoritative.
+The HTML page keeps **Diff** selected by default and adds **Guided**. Guides are
+best-effort under the shared **120-second total preparation deadline**, including
+inspection, authoring and preflight. Use a preparation-only native phase with no
+authority to invoke `review`/`review-doc`; keep the native deadline, command/run
+handle and supported cancellation/settlement path. A model instruction alone is
+not a deadline. If these controls are unavailable, skip the optional guide.
 
-Store the JSON outside reviewed repositories. Get the fingerprint using the exact
-scope with `status --json REQUEST` or `status --repo ROOT [--paths a,b]`; exit 1 is
-normal when no approval exists. Follow the guide schema/bounds in the harness
-README. Use canonical repository roots and current diff paths (rename destinations).
-Pass `review ... --guide PATH` or inline `guide` in the saved complete JSON request,
-never combine `--guide` with `--json`. Capture that request before launch and keep
-it unchanged; regenerate the guide after code or scope changes.
-Before invocation, run `preflight` with the same criterion, scope and guide
-(`--json REQUEST` or `--criterion TEXT --repo ROOT [--paths a,b] --guide PATH`).
-Exit 0 means valid inputs, not approval; no reviewer or ledger write occurs.
-Correct private guide errors before launching; each `(repository, path)` belongs
-in only one chapter. Regenerate and preflight after any code or scope change.
+For a successful attempt, inspect the actual diff, author concise before/after
+behavior and whole-file chapters ordered by risk, and preflight the same criterion
+and canonical repo/path scope. Each `(repository, path)` appears once. Store guide
+artifacts outside reviewed inputs and the client's separate recovery directory.
 
+On preparation failure, invalid/missing output, failed guide preflight or expiry,
+do not repair/retry or ask again: cancel and settle pending preparation, discard
+late output, then use a launch-only native runner with no guide. Resume the
+successful preparer only where native continuation preserves ownership; otherwise
+use a fresh fixed-model launch-only runner. Remove only `--guide`/inline `guide`,
+retain criterion/scope and require plain preflight to pass. Report the skip reason.
+Non-guide failures and explicit user cancellation remain blockers.
 
-Guide-bearing reviews require the bundled `html` backend. Invalid, stale, duplicate
-or unknown references fail; unassigned files remain under Other changes. Without a
-guide, Guided uses honestly labeled directory groups. Checkboxes track session-only
-reading, not approval. No model/network calls or document-review changes are added.
+Never restart an already invoked review as a guide fallback. If preparation
+crossed into review without authority, recover that invocation and honor its
+decision/error/stop rules. Unknown ownership blocks a replacement. Stop the guide
+timer before the actual human gate; native command/run limits must allow the normal
+human decision timeout, not cancel it after two minutes.
+
+Guided without a guide uses honestly labeled directory groups; the complete diff,
+human decision and exact-state verification remain mandatory. Supplied guides
+remain strictly validated, including recapture at review invocation. No harness
+model/network calls or document-review changes are added.
 
 ## Await the HTML decision
 
