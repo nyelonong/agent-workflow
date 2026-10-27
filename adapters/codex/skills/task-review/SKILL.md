@@ -1,6 +1,6 @@
 ---
 name: task-review
-description: "Run fingerprint-bound human review of a visual technical plan before planned implementation, or the real working-tree diff after verification and before committing."
+description: "Run fingerprint-bound human review of a visual technical plan or the real working-tree diff, only when the user requests one."
 ---
 
 # Task review

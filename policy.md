@@ -10,7 +10,7 @@ Start any Go work with the runtime's installed Go engineering skill. Reuse curre
 
 ## Commits and comments
 
-Commit one verified logical unit with its tests, and only after an approval recorded for the exact reviewed state. Stage task-owned files only. Use a clear subject and at most two body lines. Never include internal IDs, AI attribution, `Co-Authored-By`, generated-with footers, or bot sign-offs.
+Commit one verified logical unit with its tests within authorized work. Stage task-owned files only. Use a clear subject and at most two body lines. Never include internal IDs, AI attribution, `Co-Authored-By`, generated-with footers, or bot sign-offs.
 
 Comments and docstrings are guilty by default: keep only legal headers, required compiler, build, code-generation, cgo and generated-file directives, non-obvious constraints or decisions supported by code or contract evidence, including external behavior and safely ignored errors, public API contracts, constraint issue or RFC links, and proven faulty or style-only suppressions. Existing comments receive the same keep-list test. Remove in-scope narration, banners, tutorials, commented-out code, and restatements. Prefer clearer code; retain useful rationale rather than force restructuring. Comments do not excuse correctness failures; treat correctness and safety suppressions as findings, not exemptions.
 
@@ -56,15 +56,15 @@ A local commit does not authorize a remote write. Every remote mutation requires
 
 ## Workflow
 
-Act directly for read-only work. Production implementation requires explicit approval of bounded scope; a clear user request to implement that local change supplies it. Discussion, read-only requests, silence, tool permissions, and blanket edit permission are not scope approval. Default to direct parent execution; ask only for unresolved scope, authority, isolation, or cost decisions. Required technical-plan approval, independent review, exact-state pre-commit review, and sensitive/external authorization still apply.
+Act directly for read-only work. Production implementation requires explicit approval of bounded scope; a clear user request to implement that local change supplies it. Discussion, read-only requests, silence, tool permissions, and blanket edit permission are not scope approval. Default to direct parent execution; ask only for unresolved scope, authority, isolation, or cost decisions. Required technical-plan approval, independent review, and sensitive/external authorization still apply.
 
 Use one visual technical plan before implementation, not separate specification and execution-plan stages. Scale it to the change: a clear routine request may already settle the scope, leaving only a short approach and task checklist. Preserve that authorization instead of asking again. Otherwise, approval of the technical plan authorizes its bounded implementation. Material changes to outcome, scope, authority, or risk require renewed approval; ordinary implementation decisions and progress updates do not.
 
 The shared `workflow` skill owns entry, artifact ownership, continuous closeout, logical review units, evidence reuse, and legitimate stops. Phase skills apply that contract; they are responsibilities, not a mandatory invocation chain.
 
-Before committing, obtain one human decision on the complete actual uncommitted diff for the logical unit: approved criterion, callers/contracts, evidence, assumptions, trade-offs and risks. Never substitute a summary for the collected diff. Changed reviewed state needs fresh approval; failure, cancellation or supersession authorizes no commit.
+Task-review of a plan, document or diff is optional and runs only when the user requests it. A requested review decides only that review: it covers the complete actual diff, never a summary, and failure, cancellation or supersession authorizes no commit from it.
 
-Apply in-scope corrections and refresh affected evidence and review coverage. Material scope or approved-contract changes require renewed authorization. Immediately before staging, verify the exact-state approval fingerprint. Repeat executable checks only when evidence is missing or invalidated, not because approval occurred. A failed gate blocks; no automatic unbound chat fallback is permitted.
+Apply in-scope corrections and refresh affected evidence and review coverage. Material scope or approved-contract changes require renewed authorization. Before staging, establish sufficient current evidence and inspect task-owned paths. Repeat executable checks only when evidence is missing or invalidated.
 
 A consequential change can materially affect data/migrations, concurrency or async lifecycle, security, privacy, authentication, external systems, network or database behavior, public or user-visible contracts, cross-cutting behavior, or expensive/irreversible validation. Credible uncertainty is consequential.
 

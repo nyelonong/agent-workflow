@@ -1,6 +1,6 @@
 ---
 name: task-review
-description: Obtain fingerprint-bound human approval of a technical plan or the actual working-tree diff in a browser. Use once before planned implementation and after verification before committing.
+description: Obtain fingerprint-bound human approval of a technical plan or the actual working-tree diff in a browser. Use only when the user requests a plan, document or diff review.
 ---
 
 # Task review
@@ -11,8 +11,8 @@ that state. It owns the diff; you never restate it.
 
 ## Run it
 
-- Run the gate after the last focused check for the unit and before any commit
-  of production changes.
+- Run the gate only when the user requests a review, after the last focused check
+  for the unit and before committing it.
 - Pass the criterion the user approved for this unit and the repository paths
   the task owns. Scope narrows what the human sees; it never widens it.
 - Never summarize, paste, or reconstruct the diff, and never ask a human to
@@ -242,7 +242,7 @@ approval invalidates it.
   approval once the next phase has used it.
 - `cancelled` — the human withdrew. Stop.
 
-This is the one pre-implementation document approval used by `plan`. Do not add a
+When requested, this is the pre-implementation document approval used by `plan`. Do not add a
 separate specification gate, mandatory walkthrough or competing chat confirmation.
 If the page cannot be opened, report the failure and stop. No automatic unbound
 chat fallback is permitted; a supported replacement requires explicit authorization.
