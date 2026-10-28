@@ -237,7 +237,7 @@ authorization are unchanged.
 | --- | --- |
 | Pi policy | Unbundled `~/.pi/agent/AGENTS.md` master; `<!-- pi-only:start -->` / `<!-- pi-only:end -->` delimit Pi mechanics. Pi skill uses an explicit link; installer never writes into `~/.pi/agent` |
 | Go skill | Codex install/check requires `~/.pi/agent/skills/go-engineering/SKILL.md`; Claude links it too; not bundled/downloaded |
-| Claude config | External `claude-config/bootstrap.sh --links-only` consumes policy/workflow/roles; this installer handles prewalk hooks/links, not full bootstrap |
+| Claude config | External `claude-config/bootstrap.sh --links-only` consumes policy/workflow/roles; this installer handles the Go skill link, not full bootstrap |
 
 Task-review needs **none** of these. Workflow installation retains the existing personal-policy setup, not a self-contained bootstrap for every user.
 
@@ -262,13 +262,12 @@ Explicit regeneration **writes this checkout's `policy.md`**:
 
 | Runtime | Managed files |
 | --- | --- |
-| Antigravity | Marked GEMINI.md, skill/role copies, prewalk hooks/links; only old marked Galdr block removed |
+| Antigravity | Marked GEMINI.md, skill/role copies; only old marked Galdr block removed |
 | Codex | Marked AGENTS.md with inline policy, read-only roles, native skill links; Go stays Pi-owned |
-| Claude | Prewalk hooks, wrapper/config/Go links; full config stays external |
+| Claude | Go skill link; full config stays external |
 | omp | Marked AGENTS.md `@path` import, task-review link in `~/.agents/skills` |
 
-- Codex keeps the selected model; no automatic prewalk handoff. Phase skills: `adapters/codex/skills/`; shared workflow: `skills/workflow`.
-- Optional Claude/Antigravity prewalk: hooks inert until armed by a wrapper → stronger model until first edit → configured target. Flags/config/defaults control it; inspect before real model work. Existing permissions stay unchanged.
+- Codex keeps the selected model. Phase skills: `adapters/codex/skills/`; shared workflow: `skills/workflow`.
 - Task-review uses native skill roots: Codex `$task-review`, omp `skill://task-review`.
 - Task-review is optional and runs only when the user requests it. Every coding-agent runtime then delegates plan and diff gate preparation/invocation to one bounded native subagent. Use the fixed task-review model within the current provider's available runtime scope: GPT-6 Luna (`gpt-6-luna`) by default, `haiku` for Claude Code, or `gemini-3.8-flash-low` for Antigravity as specified by their adapters. Do not compare prices, substitute another model/version or silently fall back. If the fixed model is unavailable or disallowed, stop and ask the user. The parent retains its model, exact-state verification, corrections, consumption and commits. Missing native delegation/model-selection/waiting support blocks the gate. This is an instruction-level rule, not runtime enforcement.
 - No credentials, MCP/model-router configuration, VCC/session migration, unrelated settings or remote-action authority supplied.

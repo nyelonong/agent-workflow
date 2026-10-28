@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -38,10 +36,6 @@ def managed_block() -> str:
 def codex_block() -> str:
     # Codex documents no include directive, so the policy is rendered inline.
     policy = (ROOT / "policy.md").read_text(encoding="utf-8").strip()
-    policy = policy.replace(
-        "start it on the stronger model and let prewalk hand off after the first edit.",
-        "use the current model without an automatic handoff.",
-    )
     adapter = (ROOT / "adapters/codex/AGENTS.md").read_text(encoding="utf-8").strip()
     return f"{CODEX_START}\n{policy}\n\n{adapter}\n{CODEX_END}"
 
@@ -146,66 +140,10 @@ def agy_paths(home: Path) -> list[tuple[Path, Path]]:
     ]
 
 
-def agy_links(home: Path) -> list[tuple[Path, Path]]:
-    return [
-        (ROOT / "adapters/agy/bin/agy-prewalk", home / ".local/bin/agy-prewalk"),
-        (ROOT / "adapters/agy/prewalk.json", home / ".gemini/prewalk.json"),
-    ]
-
-
-AGY_HOOKS_BLOCK = "prewalk"
-
-
-def agy_hook_command(event: str) -> str:
-    script = shlex.quote(str(CLAUDE_HOOK_SCRIPT))
-    # Guarded so a moved repository fails open (empty stdout is Antigravity's neutral answer).
-    return f"[ -f {script} ] && python3 {script} agy {event} || true"
-
-
-def agy_hooks_block() -> dict:
-    handler = lambda event: {"type": "command", "command": agy_hook_command(event), "timeout": 10}
-    return {
-        "PreInvocation": [handler("PreInvocation")],
-        "Stop": [handler("Stop")],
-        "PreToolUse": [{"matcher": ".*", "hooks": [handler("PreToolUse")]}],
-        "PostToolUse": [{"matcher": ".*", "hooks": [handler("PostToolUse")]}],
-    }
-
-
-def agy_hooks_path(home: Path) -> Path:
-    path = home / ".gemini/config/hooks.json"
-    return path.resolve() if path.is_symlink() else path
-
-
-def load_agy_hooks(home: Path) -> tuple[Path, dict]:
-    path = agy_hooks_path(home)
-    data = load_json(path)
-    if AGY_HOOKS_BLOCK in data and not isinstance(data[AGY_HOOKS_BLOCK], dict):
-        fail(f"{path} has a non-object {AGY_HOOKS_BLOCK} block")
-    return path, data
-
-
-def install_agy_hooks(home: Path) -> None:
-    path, data = load_agy_hooks(home)
-    if data.get(AGY_HOOKS_BLOCK) == agy_hooks_block():
-        return
-    data[AGY_HOOKS_BLOCK] = agy_hooks_block()
-    atomic_write(path, json.dumps(data, indent=2) + "\n")
-
-
-def check_agy_hooks(home: Path) -> None:
-    path, data = load_agy_hooks(home)
-    if data.get(AGY_HOOKS_BLOCK) != agy_hooks_block():
-        fail(f"prewalk block is missing or differs in {path}")
-
-
 def install_agy(home: Path) -> None:
     paths = agy_paths(home)
     for _, target in paths:
         preflight_directory(target)
-    for source, target in agy_links(home):
-        preflight_link(source, target)
-    load_agy_hooks(home)
 
     gemini = home / ".gemini/GEMINI.md"
     existing = gemini.read_text(encoding="utf-8") if gemini.exists() else ""
@@ -215,9 +153,6 @@ def install_agy(home: Path) -> None:
     atomic_write(gemini, rendered)
     for source, target in paths:
         install_directory(source, target)
-    install_agy_hooks(home)
-    for source, target in agy_links(home):
-        install_link(source, target)
 
 
 def check_agy(home: Path) -> None:
@@ -230,9 +165,6 @@ def check_agy(home: Path) -> None:
     remove_galdr_block(home / ".gemini/AGENTS.md", check=True)
     for source, target in agy_paths(home):
         check_directory(source, target)
-    check_agy_hooks(home)
-    for source, target in agy_links(home):
-        check_link(source, target)
 
 
 OMP_START = "<!-- personal-workflow:omp:start -->"
@@ -278,98 +210,8 @@ def check_omp(home: Path) -> None:
         check_link(source, target)
 
 
-CLAUDE_HOOK_SCRIPT = ROOT / "scripts/prewalk_hook.py"
-# Guarded so a moved or deleted repository fails open instead of denying every edit.
-CLAUDE_HOOK_COMMAND = (
-    f"[ -f {shlex.quote(str(CLAUDE_HOOK_SCRIPT))} ] && python3 {shlex.quote(str(CLAUDE_HOOK_SCRIPT))} claude || true"
-)
-CLAUDE_EDIT_MATCHER = "Edit|Write|MultiEdit|NotebookEdit"
-CLAUDE_TODO_MATCHER = "TodoWrite"
-
-
-def claude_hook_groups() -> dict[str, list[str]]:
-    return {"PreToolUse": [CLAUDE_EDIT_MATCHER], "PostToolUse": [CLAUDE_EDIT_MATCHER, CLAUDE_TODO_MATCHER]}
-
-
-def claude_hook_entry(matcher: str) -> dict:
-    return {"matcher": matcher, "hooks": [{"type": "command", "command": CLAUDE_HOOK_COMMAND, "timeout": 10}]}
-
-
-def is_prewalk_hook(hook: object) -> bool:
-    return isinstance(hook, dict) and "prewalk_hook.py" in str(hook.get("command", ""))
-
-
-def prewalk_groups(groups: object, matcher: str) -> list[dict]:
-    if not isinstance(groups, list):
-        return []
-    return [
-        group
-        for group in groups
-        if isinstance(group, dict)
-        and group.get("matcher") == matcher
-        and isinstance(group.get("hooks"), list)
-        and any(is_prewalk_hook(hook) for hook in group["hooks"])
-    ]
-
-
-def has_claude_hook(groups: object, matcher: str) -> bool:
-    return any(
-        hook.get("command") == CLAUDE_HOOK_COMMAND
-        for group in prewalk_groups(groups, matcher)
-        for hook in group["hooks"]
-        if is_prewalk_hook(hook)
-    )
-
-
-def merge_claude_hooks(settings: dict) -> dict:
-    """Return settings with the prewalk hook groups added or converged; other content is untouched."""
-    hooks = settings.setdefault("hooks", {})
-    if not isinstance(hooks, dict):
-        fail("~/.claude/settings.json has a non-object hooks field")
-    for event, matchers in claude_hook_groups().items():
-        groups = hooks.setdefault(event, [])
-        if not isinstance(groups, list):
-            fail(f"~/.claude/settings.json hooks.{event} is not a list")
-        for matcher in matchers:
-            existing = prewalk_groups(groups, matcher)
-            if not existing:
-                groups.append(claude_hook_entry(matcher))
-                continue
-            for group in existing:
-                for hook in group["hooks"]:
-                    if is_prewalk_hook(hook):
-                        hook["command"] = CLAUDE_HOOK_COMMAND
-                        hook["timeout"] = 10
-    return settings
-
-
-def claude_hooks_present(settings: dict) -> bool:
-    hooks = settings.get("hooks")
-    if not isinstance(hooks, dict):
-        return False
-    return all(
-        has_claude_hook(hooks.get(event), matcher)
-        for event, matchers in claude_hook_groups().items()
-        for matcher in matchers
-    )
-
-
-def load_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as error:
-        fail(f"{path} is not valid JSON: {error}")
-    if not isinstance(data, dict):
-        fail(f"{path} must contain a JSON object")
-    return data
-
-
 def claude_links(home: Path) -> list[tuple[Path, Path]]:
     return [
-        (ROOT / "adapters/claude/bin/claude-prewalk", home / ".local/bin/claude-prewalk"),
-        (ROOT / "adapters/claude/prewalk.json", home / ".claude/prewalk.json"),
         # Pi owns the Go skill; Claude consumes it read-only through this link.
         (home / ".pi/agent/skills/go-engineering", home / ".claude/skills/go-engineering"),
     ]
@@ -398,23 +240,10 @@ def check_link(source: Path, target: Path) -> None:
 
 def install_claude(home: Path) -> None:
     for source, target in claude_links(home):
-        preflight_link(source, target)
-    settings_path = home / ".claude/settings.json"
-    if settings_path.is_symlink():
-        # Write through the link so an owner repository keeps the file.
-        settings_path = settings_path.resolve()
-    settings = load_json(settings_path)
-    merged = merge_claude_hooks(json.loads(json.dumps(settings)))
-    if merged != settings:
-        atomic_write(settings_path, json.dumps(merged, indent=2) + "\n")
-    for source, target in claude_links(home):
         install_link(source, target)
 
 
 def check_claude(home: Path) -> None:
-    settings_path = home / ".claude/settings.json"
-    if not claude_hooks_present(load_json(settings_path)):
-        fail(f"prewalk hooks are missing from {settings_path}")
     for source, target in claude_links(home):
         check_link(source, target)
 

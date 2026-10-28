@@ -206,7 +206,6 @@ class ClaudeInstallerTests(InstallerTests):
             result = self.run_installer(home, check=False, runtime="claude")
             self.assertNotEqual(0, result.returncode)
             self.assertIn("refusing", result.stderr)
-            self.assertFalse((home / ".claude/prewalk.json").exists(), "preflight runs before any link is written")
 
 
 class CodexInstallerTests(InstallerTests):

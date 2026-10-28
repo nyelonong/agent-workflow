@@ -66,12 +66,7 @@ class ParityTests(unittest.TestCase):
         self.assertIn("@__POLICY_PATH__", claude, "Claude includes the generated policy by path")
         self.assertIn(f"@{ROOT / 'policy.md'}", install.managed_block(), "Antigravity includes the generated policy by path")
         self.assertIn(f"@{ROOT / 'policy.md'}", install.omp_block(), "omp includes the generated policy by path")
-        codex_policy = POLICY.strip().replace(
-            "start it on the stronger model and let prewalk hand off after the first edit.",
-            "use the current model without an automatic handoff.",
-        )
-        self.assertIn(codex_policy, install.codex_block(), "Codex changes only its unsupported model handoff")
-        self.assertNotIn("let prewalk hand off", install.codex_block())
+        self.assertIn(POLICY.strip(), install.codex_block(), "Codex renders the policy inline")
 
     def test_generated_policy_is_free_of_pi_mechanics(self) -> None:
         for token in MECHANICS["pi"] + ("BASE_TOOLS", "~/.pi/", "pi-only"):
