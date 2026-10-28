@@ -78,21 +78,14 @@ optional flow labels, and explained chapters beside the same real diffs. Comment
 drafts, layout controls and approval checks are shared. Chapter checkboxes track
 reading only, for this page session; they are not approval.
 
-Agent-authored guides are best-effort. The native parent bounds a preparation-only
-phase to **120 seconds total**, including inspection, authoring and preflight.
-That phase cannot invoke a reviewer. On failure, invalid/missing output, guide
-validation rejection or expiry, cancel and settle preparation, ignore late output,
-and launch the complete actual diff without a guide. Do not retry guide generation
-or ask again. Report the skip reason; retain the same criterion and scope.
+Guides are best-effort and written by the calling agent itself from the diff it
+has already inspected; there is no separate preparation step or deadline. If a
+guide fails preflight, the agent corrects it once, then skips it and opens the
+complete actual diff without a guide, reporting why.
 
-If the runtime cannot bound and settle preparation, skip it immediately. The short
-deadline never applies to the human review. Explicit user cancellation, unresolved
-ownership, base scope/permission errors and an already invoked gate's failure or
-non-approval retain their normal stop rules. Plain fallback must preflight too.
-
-No model/network call is made by this harness. The runtime owns optional guide
-authoring and its deadline. Store the guide outside reviewed repositories and
-client recovery artifacts. Obtain the fingerprint using the **same repo/path scope**:
+No model/network call is made by this harness. Store the guide outside reviewed
+repositories and client recovery artifacts. Obtain the fingerprint using the
+**same repo/path scope**:
 
 ```sh
 python3 "$HARNESS/scripts/task_review.py" status --repo "$TARGET" --paths src/example.py,tests/test_example.py
@@ -109,9 +102,9 @@ python3 "$HARNESS/scripts/task_review.py" review \
 
 `preflight` returns 0 only for valid scope/guide inputs; it opens no browser and
 does not change any approval ledger. Duplicate, stale or out-of-scope guide
-references fail. The best-effort runtime workflow skips rejected guides and
-preflights the unchanged base request without one; it does not weaken validation
-or retry a failed review. Manually supplied `--guide` requests still fail strictly.
+references fail. The best-effort runtime workflow skips a guide that still fails
+after one correction and preflights the unchanged base request without one; it
+does not weaken validation or retry a failed review. Manually supplied `--guide` requests still fail strictly.
 
 
 Guide format (replace the fingerprint and repository root):

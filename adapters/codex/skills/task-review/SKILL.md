@@ -15,8 +15,8 @@ The client is `scripts/task_review.py` in the repository that owns this skill; r
 
 Delegate canonical request preparation and invocation of `review`/`review-doc`
 to one bounded native gate runner, following the [shared guide-phase, model and
-authority policy](../../../../skills/task-review/SKILL.md#delegation). Optional
-guide preparation is separately bounded and cannot invoke a reviewer. Use GPT-6 Luna
+authority policy](../../../../skills/task-review/SKILL.md#delegation). The parent
+writes any optional guide before delegating. Use GPT-6 Luna
 (`gpt-6-luna`) within the current provider's available runtime scope. Do not compare
 prices, inherit the parent's model or substitute another model/version; if Luna
 is unavailable or disallowed, stop and ask the user. Keep the parent's model
@@ -25,15 +25,15 @@ supported waiting is unavailable, report the blocker and ask the user rather
 than running the gate in the parent or switching providers.
 
 Give the child the approved criterion, exact scope/document, owning client,
-verification evidence and private recovery directory. It may inspect code,
-author the advisory guide and run the canonical client; it may not edit reviewed
+verification evidence, private recovery directory and either the preflighted
+guide or `guide: none`. It may inspect code and run the canonical client; it may not edit reviewed
 inputs, widen scope, spawn children, stage, commit or consume approval. The gate
 runner executes the maintained client directly with `--recovery-dir PATH` and
 does not delegate again. The client saves its exact request, process record,
 live diagnostics, state and validated result. Do not generate launch scripts,
 PID files, shell redirection, process substitution or detached commands.
-Read and foreground-command tools suffice; write is needed only for guides,
-and optional child progress messaging is not a prerequisite.
+Read and foreground-command tools suffice; optional child progress messaging is
+not a prerequisite.
 The parent must inspect the canonical artifacts, apply annotations or stop
 decisions, and own exact-state verification and approval consumption. This is
 not independent code review and never replaces the human decision.
@@ -46,36 +46,19 @@ parent turn.
 
 ## Guided diff view
 
-The HTML page keeps **Diff** selected by default and adds **Guided**. Guides are
-best-effort under the shared **120-second total preparation deadline**, including
-inspection, authoring and preflight. Use a preparation-only native phase with no
-authority to invoke `review`/`review-doc`; keep the native deadline, command/run
-handle and supported cancellation/settlement path. A model instruction alone is
-not a deadline. If these controls are unavailable, skip the optional guide.
-
-For a successful attempt, inspect the actual diff, author concise before/after
-behavior and whole-file chapters ordered by risk, and preflight the same criterion
-and canonical repo/path scope. Each `(repository, path)` appears once. Store guide
-artifacts outside reviewed inputs and the client's separate recovery directory.
-
-On preparation failure, invalid/missing output, failed guide preflight or expiry,
-do not repair/retry or ask again: cancel and settle pending preparation, discard
-late output, then use a launch-only native runner with no guide. Resume the
-successful preparer only where native continuation preserves ownership; otherwise
-use a fresh fixed-model launch-only runner. Remove only `--guide`/inline `guide`,
-retain criterion/scope and require plain preflight to pass. Report the skip reason.
-Non-guide failures and explicit user cancellation remain blockers.
-
-Never restart an already invoked review as a guide fallback. If preparation
-crossed into review without authority, recover that invocation and honor its
-decision/error/stop rules. Unknown ownership blocks a replacement. Stop the guide
-timer before the actual human gate; native command/run limits must allow the normal
-human decision timeout, not cancel it after two minutes.
+The HTML page keeps **Diff** selected by default and adds **Guided**. Follow the
+shared [guided diff view](../../../../skills/task-review/SKILL.md#guided-diff-view)
+rules: the parent writes the guide from the diff it inspected, with before/after
+behavior and whole-file chapters ordered by risk, each `(repository, path)` once.
+Store it outside reviewed inputs and the client's recovery directory, and preflight
+it with the same criterion and canonical repo/path scope before delegating. If it
+still fails after one correction, hand the runner `guide: none`, require plain
+preflight to pass and report the skip reason. Non-guide failures and explicit
+user cancellation remain blockers.
 
 Guided without a guide uses honestly labeled directory groups; the complete diff,
 human decision and exact-state verification remain mandatory. Supplied guides
-remain strictly validated, including recapture at review invocation. No harness
-model/network calls or document-review changes are added.
+remain strictly validated, including recapture at review invocation.
 
 ## Await the HTML decision
 
