@@ -14,7 +14,7 @@ Apply the shared workflow's one-technical-plan contract. Clarification, design a
 
 Use the shared contract's diagrams, tables, bullets and tasks, not another template or design-coverage matrix. Load only applicable guidance: [graph lens](references/graph-lens.md) for complex structure/data flow, [interface flow](references/interface-flow.md) for changed user interactions, and [delegation planning](references/delegation-planning.md) for nontrivial dependencies or approved parallel work.
 
-Present a technical-plan document through `task-review` using `review-doc`. Follow the native Codex waiting/recovery mechanics and keep the pending document unchanged. Apply annotations and re-review revisions. Do not add a separate specification gate or competing chat approval. Approval authorizes the listed implementation scope directly; external actions and commits retain their own authority boundaries.
+Present a technical-plan document through `task-review` using `review-doc` only when the user requests it. Follow the native Codex waiting/recovery mechanics and keep the pending document unchanged. Apply annotations and re-review revisions. Do not add a separate specification gate or competing chat approval. Approval authorizes the listed implementation scope directly; external actions and commits retain their own authority boundaries.
 
 After approval, implement and apply shared continuous closeout. Keep task status, actual evidence, review outcomes and one `next:` in the plan; classify consequence and independent-review necessity separately. Reuse valid evidence rather than rerunning it at phase boundaries. Keep reviewed inputs unchanged through approval verification and use/consumption.
 
